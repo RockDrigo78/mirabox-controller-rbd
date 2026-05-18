@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { StreamDockConnectionInfo } from "./streamdock.js";
+import type { StreamDockConnectionInfo } from "./streamdock-types.js";
 
 export type StreamDockApi = {
   connect: () => Promise<StreamDockConnectionInfo>;

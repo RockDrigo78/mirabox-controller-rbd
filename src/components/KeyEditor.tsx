@@ -1,4 +1,4 @@
-import type { ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import {
   Alert,
   Box,
@@ -16,8 +16,19 @@ import {
 } from "@mui/icons-material";
 import { useStreamDeck } from "../context/useStreamDeck";
 
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Failed to update the Stream Deck key image.";
+};
+
 export const KeyEditor = () => {
   const { state, getKey, updateKey } = useStreamDeck();
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const isConnectedRef = useRef(state.isConnected);
+  isConnectedRef.current = state.isConnected;
 
   if (state.selectedKeyId === null) {
     return (
@@ -47,32 +58,55 @@ export const KeyEditor = () => {
     }
 
     const reader = new FileReader();
-    reader.onload = async (loadEvent) => {
-      const imageData = loadEvent.target?.result;
-      if (typeof imageData !== "string") {
-        return;
-      }
+    reader.onload = (loadEvent) => {
+      void (async () => {
+        const imageData = loadEvent.target?.result;
+        if (typeof imageData !== "string") {
+          return;
+        }
 
-      updateKey(key.id, {
-        image: imageData,
-        label: file.name.replace(/\.[^.]+$/, ""),
-      });
+        setUploadError(null);
 
-      if (state.isConnected && window.streamDockApi) {
-        await window.streamDockApi.setKeyImage(key.id, imageData);
-      }
+        updateKey(key.id, {
+          image: imageData,
+          label: file.name.replace(/\.[^.]+$/, ""),
+        });
+
+        const streamDockApi = window.streamDockApi;
+        if (!isConnectedRef.current || !streamDockApi) {
+          return;
+        }
+
+        try {
+          await streamDockApi.setKeyImage(key.id, imageData);
+        } catch (error) {
+          console.error(error);
+          setUploadError(getErrorMessage(error));
+        }
+      })();
     };
 
     reader.readAsDataURL(file);
     event.target.value = "";
   };
 
-  const handleClear = async () => {
-    updateKey(key.id, { image: undefined, label: undefined });
+  const handleClear = () => {
+    void (async () => {
+      setUploadError(null);
+      updateKey(key.id, { image: undefined, label: undefined });
 
-    if (state.isConnected && window.streamDockApi) {
-      await window.streamDockApi.clearKeyImage(key.id);
-    }
+      const streamDockApi = window.streamDockApi;
+      if (!isConnectedRef.current || !streamDockApi) {
+        return;
+      }
+
+      try {
+        await streamDockApi.clearKeyImage(key.id);
+      } catch (error) {
+        console.error(error);
+        setUploadError(getErrorMessage(error));
+      }
+    })();
   };
 
   return (
@@ -126,11 +160,13 @@ export const KeyEditor = () => {
           variant="outlined"
           color="error"
           startIcon={<DeleteIcon />}
-          onClick={() => void handleClear()}
+          onClick={handleClear}
           disabled={!key.image}
         >
           Clear Key Image
         </Button>
+
+        {uploadError ? <Alert severity="error">{uploadError}</Alert> : null}
 
         <Alert severity={state.isConnected ? "success" : "warning"}>
           {state.isConnected
