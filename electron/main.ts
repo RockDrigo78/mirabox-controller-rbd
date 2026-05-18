@@ -30,6 +30,11 @@ const registerIpcHandlers = () => {
   ipcMain.handle("streamdock:clearKeyImage", async (_event, keyId: number) => {
     streamDock.clearKeyImage(keyId);
   });
+  ipcMain.handle(
+    "streamdock:preprocessKeyImage",
+    async (_event, sourceDataUrl: string) =>
+      streamDock.preprocessKeyImageDataUrl(sourceDataUrl),
+  );
 };
 
 const createWindow = () => {

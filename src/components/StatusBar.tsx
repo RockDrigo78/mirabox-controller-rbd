@@ -60,6 +60,9 @@ export const StatusBar = () => {
             await streamDockApi.setKeyImage(key.id, key.image);
           } catch (syncError) {
             console.error(`Failed to sync key ${key.id + 1}`, syncError);
+            setConnectionError(
+              `Connected, but key ${key.id + 1} failed to upload. Re-select the key and upload again.`,
+            );
           }
         }
       }

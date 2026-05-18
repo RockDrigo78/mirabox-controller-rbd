@@ -1,10 +1,15 @@
 import HID from "node-hid";
 import sharp from "sharp";
+import {
+  buildGifFrames,
+  DEFAULT_KEY_IMAGE_TRANSFORM,
+  parseImageDataUrl,
+  processKeyImageDataUrl,
+  processKeyImageToJpeg,
+  type KeyImageTransform,
+} from "./key-image.js";
 
-type KeyImageTransform = {
-  keySize: number;
-  rotation: 0 | 90 | 180 | 270;
-};
+export type { KeyImageTransform };
 
 type SupportedDevice = {
   vendorId: number;
@@ -207,106 +212,6 @@ function clampBrightness(percent: number): number {
   return Math.round(Math.pow(clamped / 100, 0.75) * 100);
 }
 
-function parseDataUrl(input: string): Buffer {
-  if (!input.startsWith("data:")) {
-    return Buffer.from(input, "base64");
-  }
-
-  const commaIndex = input.indexOf(",");
-  if (commaIndex === -1) {
-    throw new Error("Invalid image payload");
-  }
-
-  return Buffer.from(input.slice(commaIndex + 1), "base64");
-}
-
-const MAX_KEY_JPEG_BYTES = 10240;
-
-const toSharpRotationAngle = (
-  rotation: KeyImageTransform["rotation"],
-): number => {
-  // Mirabox Python SDK uses PIL angles (counter-clockwise); sharp is clockwise.
-  if (rotation === 90) {
-    return -90;
-  }
-  if (rotation === 270) {
-    return 90;
-  }
-  return rotation;
-};
-
-const prepareNativeKeyPipeline = (
-  pipeline: sharp.Sharp,
-  keyImage: KeyImageTransform,
-): sharp.Sharp => {
-  const { keySize, rotation } = keyImage;
-  let prepared = pipeline;
-
-  if (rotation !== 0) {
-    prepared = prepared.rotate(toSharpRotationAngle(rotation), {
-      background: { r: 0, g: 0, b: 0 },
-    });
-  }
-
-  return prepared.resize(keySize, keySize, {
-    fit: "fill",
-    background: { r: 0, g: 0, b: 0 },
-  });
-};
-
-async function encodePreparedPipeline(pipeline: sharp.Sharp): Promise<Buffer> {
-  for (let quality = 100; quality >= 20; quality -= 10) {
-    const jpeg = await pipeline
-      .clone()
-      .jpeg({ quality, chromaSubsampling: "4:4:4" })
-      .toBuffer();
-
-    if (jpeg.byteLength <= MAX_KEY_JPEG_BYTES) {
-      return jpeg;
-    }
-  }
-
-  return pipeline
-    .jpeg({ quality: 20, chromaSubsampling: "4:4:4" })
-    .toBuffer();
-}
-
-async function buildStaticFrame(
-  source: Buffer,
-  keyImage: KeyImageTransform,
-): Promise<Buffer> {
-  const prepared = prepareNativeKeyPipeline(
-    sharp(source, { animated: false }),
-    keyImage,
-  );
-
-  return encodePreparedPipeline(prepared);
-}
-
-async function buildGifFrames(
-  source: Buffer,
-  keyImage: KeyImageTransform,
-): Promise<GifFrame[]> {
-  const metadata = await sharp(source, { animated: true }).metadata();
-  const pages = metadata.pages ?? 1;
-  const delays = metadata.delay ?? [];
-
-  const frames: GifFrame[] = [];
-  for (let page = 0; page < pages; page += 1) {
-    const prepared = prepareNativeKeyPipeline(
-      sharp(source, { animated: true, page, pages: 1 }),
-      keyImage,
-    );
-    const jpeg = await encodePreparedPipeline(prepared);
-    frames.push({
-      data: jpeg,
-      delayMs: Math.max(delays[page] ?? delays[0] ?? 100, 40),
-    });
-  }
-
-  return frames;
-}
-
 import type { StreamDockConnectionInfo } from "./streamdock-types.js";
 
 export type { StreamDockConnectionInfo };
@@ -401,14 +306,25 @@ export class MiraboxStreamDock {
   clearKeyImage(keyId: number): void {
     this.assertKeyId(keyId);
     this.stopAnimation(keyId);
-    this.sendSimple([0x43, 0x4c, 0x45, 0x00, 0x00, 0x00, this.mapKeyId(keyId)]);
+    // Clear uses logical key indices (1–15), not the hardware IDs used for image upload.
+    const logicalKeyIndex = keyId + 1;
+    this.sendSimple([0x43, 0x4c, 0x45, 0x00, 0x00, 0x00, logicalKeyIndex]);
+    this.refresh();
+  }
+
+  getKeyImageTransform(): KeyImageTransform {
+    return this.deviceInfo?.keyImage ?? DEFAULT_KEY_IMAGE_TRANSFORM;
+  }
+
+  async preprocessKeyImageDataUrl(sourceDataUrl: string): Promise<string> {
+    return processKeyImageDataUrl(sourceDataUrl, this.getKeyImageTransform());
   }
 
   async setKeyImageFromDataUrl(keyId: number, payload: string): Promise<void> {
     this.assertKeyId(keyId);
-    const source = parseDataUrl(payload);
+    const source = parseImageDataUrl(payload);
     const metadata = await sharp(source, { animated: true }).metadata();
-    const keyImage = this.getDeviceInfo().keyImage;
+    const keyImage = this.getKeyImageTransform();
 
     if ((metadata.pages ?? 1) > 1 && metadata.format === "gif") {
       const frames = await buildGifFrames(source, keyImage);
@@ -417,7 +333,8 @@ export class MiraboxStreamDock {
     }
 
     this.stopAnimation(keyId);
-    const frame = await buildStaticFrame(source, keyImage);
+
+    const frame = await processKeyImageToJpeg(source, keyImage);
     await this.sendKeyFrame(keyId, frame);
   }
 

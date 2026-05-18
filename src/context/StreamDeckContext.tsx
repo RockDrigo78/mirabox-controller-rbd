@@ -21,6 +21,7 @@ export interface StreamDeckContextType {
   state: StreamDeckState;
   setConnected: (connected: boolean) => void;
   updateKey: (keyId: number, updates: Partial<StreamDeckKey>) => void;
+  clearKeyImageState: (keyId: number) => void;
   selectKey: (keyId: number) => void;
   getKey: (keyId: number) => StreamDeckKey | undefined;
 }
@@ -65,6 +66,20 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const clearKeyImageState = useCallback((keyId: number) => {
+    setState((prev) => ({
+      ...prev,
+      keys: prev.keys.map((key) => {
+        if (key.id !== keyId) {
+          return key;
+        }
+
+        const { image, label, ...keyWithoutImage } = key;
+        return keyWithoutImage;
+      }),
+    }));
+  }, []);
+
   const selectKey = useCallback((keyId: number) => {
     setState((prev) => ({ ...prev, selectedKeyId: keyId }));
   }, []);
@@ -78,6 +93,7 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
     state,
     setConnected,
     updateKey,
+    clearKeyImageState,
     selectKey,
     getKey,
   };

@@ -25,7 +25,7 @@ const getErrorMessage = (error: unknown): string => {
 };
 
 export const KeyEditor = () => {
-  const { state, getKey, updateKey } = useStreamDeck();
+  const { state, getKey, updateKey, clearKeyImageState } = useStreamDeck();
   const [uploadError, setUploadError] = useState<string | null>(null);
   const isConnectedRef = useRef(state.isConnected);
   isConnectedRef.current = state.isConnected;
@@ -60,25 +60,38 @@ export const KeyEditor = () => {
     const reader = new FileReader();
     reader.onload = (loadEvent) => {
       void (async () => {
-        const imageData = loadEvent.target?.result;
-        if (typeof imageData !== "string") {
+        const rawImageData = loadEvent.target?.result;
+        if (typeof rawImageData !== "string") {
           return;
         }
 
         setUploadError(null);
 
+        const streamDockApi = window.streamDockApi;
+        const isGif = file.type === "image/gif";
+
+        let previewImageData = rawImageData;
+        if (streamDockApi && !isGif) {
+          try {
+            previewImageData = await streamDockApi.preprocessKeyImage(rawImageData);
+          } catch (error) {
+            console.error(error);
+            setUploadError(getErrorMessage(error));
+            return;
+          }
+        }
+
         updateKey(key.id, {
-          image: imageData,
+          image: previewImageData,
           label: file.name.replace(/\.[^.]+$/, ""),
         });
 
-        const streamDockApi = window.streamDockApi;
         if (!isConnectedRef.current || !streamDockApi) {
           return;
         }
 
         try {
-          await streamDockApi.setKeyImage(key.id, imageData);
+          await streamDockApi.setKeyImage(key.id, rawImageData);
         } catch (error) {
           console.error(error);
           setUploadError(getErrorMessage(error));
@@ -91,9 +104,14 @@ export const KeyEditor = () => {
   };
 
   const handleClear = () => {
+    const keyIdToClear = state.selectedKeyId;
+    if (keyIdToClear === null) {
+      return;
+    }
+
     void (async () => {
       setUploadError(null);
-      updateKey(key.id, { image: undefined, label: undefined });
+      clearKeyImageState(keyIdToClear);
 
       const streamDockApi = window.streamDockApi;
       if (!isConnectedRef.current || !streamDockApi) {
@@ -101,7 +119,7 @@ export const KeyEditor = () => {
       }
 
       try {
-        await streamDockApi.clearKeyImage(key.id);
+        await streamDockApi.clearKeyImage(keyIdToClear);
       } catch (error) {
         console.error(error);
         setUploadError(getErrorMessage(error));
@@ -113,7 +131,7 @@ export const KeyEditor = () => {
     <Card sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <CardHeader
         title={`Key ${key.id + 1}`}
-        subheader="Upload an image or animated GIF"
+        subheader="Images are cropped to a square (cover fit) before upload"
       />
       <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <Paper
@@ -170,8 +188,8 @@ export const KeyEditor = () => {
 
         <Alert severity={state.isConnected ? "success" : "warning"}>
           {state.isConnected
-            ? "Uploads are sent to the connected MiraBox immediately."
-            : "You can prepare images while disconnected. They will upload on the next connection."}
+            ? "Images are preprocessed to a square cover crop, then sent to the device."
+            : "Images are preprocessed when selected and will upload on the next connection."}
         </Alert>
       </CardContent>
     </Card>
