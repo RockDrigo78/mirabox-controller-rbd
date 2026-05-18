@@ -1,6 +1,7 @@
 import { StreamDeckProvider } from "./context/StreamDeckContext";
 import { StatusBar } from "./components/StatusBar";
 import { StreamDeckGrid } from "./components/StreamDeckGrid";
+import { KeyEditor } from "./components/KeyEditor";
 import { ThemeProvider, createTheme, CssBaseline, Box } from "@mui/material";
 
 const theme = createTheme({
@@ -54,13 +55,18 @@ function App() {
             component="main"
             sx={{
               flex: 1,
-              overflow: "hidden",
               display: "flex",
               p: 2,
               gap: 2,
+              minHeight: 0,
             }}
           >
-            <StreamDeckGrid />
+            <Box sx={{ flex: 2, minWidth: 0, overflow: "auto" }}>
+              <StreamDeckGrid />
+            </Box>
+            <Box sx={{ width: 360, maxWidth: "35vw", overflow: "auto" }}>
+              <KeyEditor />
+            </Box>
           </Box>
         </Box>
       </StreamDeckProvider>

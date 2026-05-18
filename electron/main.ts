@@ -10,7 +10,8 @@ const streamDock = new MiraboxStreamDock();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const isDev = process.env.NODE_ENV === "development";
+const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+const isDev = Boolean(devServerUrl);
 
 const registerIpcHandlers = () => {
   ipcMain.handle("streamdock:connect", async () => streamDock.connect());
@@ -43,9 +44,10 @@ const createWindow = () => {
     },
   });
 
-  const startUrl = isDev
-    ? "http://localhost:5173"
-    : `file://${path.join(__dirname, "../dist/index.html")}`;
+  const startUrl =
+    isDev && devServerUrl
+      ? devServerUrl
+      : `file://${path.join(__dirname, "../index.html")}`;
 
   mainWindow.loadURL(startUrl);
 

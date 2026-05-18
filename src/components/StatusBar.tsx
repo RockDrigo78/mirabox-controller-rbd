@@ -15,21 +15,34 @@ import { Devices as DevicesIcon } from "@mui/icons-material";
 export const StatusBar = () => {
   const { state, setConnected } = useStreamDeck();
   const [connecting, setConnecting] = useState(false);
+  const hasNativeBridge = Boolean(window.streamDockApi);
 
   const handleConnect = async () => {
+    if (!hasNativeBridge) {
+      setConnected(false);
+      return;
+    }
+
+    const streamDockApi = window.streamDockApi;
+    if (!streamDockApi) {
+      setConnected(false);
+      return;
+    }
+
     setConnecting(true);
     try {
-      if (!window.streamDockApi) {
-        throw new Error(
-          "Stream Dock API is only available when running inside Electron.",
-        );
-      }
-
       if (state.isConnected) {
-        await window.streamDockApi.disconnect();
+        await streamDockApi.disconnect();
         setConnected(false);
       } else {
-        await window.streamDockApi.connect();
+        await streamDockApi.connect();
+
+        for (const key of state.keys) {
+          if (key.image) {
+            await streamDockApi.setKeyImage(key.id, key.image);
+          }
+        }
+
         setConnected(true);
       }
     } catch (error) {
@@ -52,15 +65,27 @@ export const StatusBar = () => {
         <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
           <Chip
             icon={<DevicesIcon />}
-            label={state.isConnected ? "Connected" : "Disconnected"}
-            color={state.isConnected ? "success" : "error"}
+            label={
+              hasNativeBridge
+                ? state.isConnected
+                  ? "Connected"
+                  : "Disconnected"
+                : "Browser Preview"
+            }
+            color={
+              hasNativeBridge
+                ? state.isConnected
+                  ? "success"
+                  : "error"
+                : "warning"
+            }
             variant="outlined"
           />
           <Button
             variant="contained"
             color={state.isConnected ? "error" : "success"}
             onClick={handleConnect}
-            disabled={connecting}
+            disabled={connecting || !hasNativeBridge}
             sx={{ minWidth: 120 }}
           >
             {connecting ? (
@@ -68,6 +93,8 @@ export const StatusBar = () => {
                 <CircularProgress size={20} sx={{ mr: 1 }} />
                 Connecting...
               </>
+            ) : !hasNativeBridge ? (
+              "Use Electron"
             ) : state.isConnected ? (
               "Disconnect"
             ) : (

@@ -20,7 +20,9 @@ export interface StreamDeckState {
 export interface StreamDeckContextType {
   state: StreamDeckState;
   setConnected: (connected: boolean) => void;
+  updateKey: (keyId: number, updates: Partial<StreamDeckKey>) => void;
   selectKey: (keyId: number) => void;
+  getKey: (keyId: number) => StreamDeckKey | undefined;
 }
 
 // Initialize grid with 3x5 = 15 keys (MiraBox HSV 293S layout)
@@ -51,14 +53,33 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
     setState((prev) => ({ ...prev, isConnected: connected }));
   }, []);
 
+  const updateKey = useCallback(
+    (keyId: number, updates: Partial<StreamDeckKey>) => {
+      setState((prev) => ({
+        ...prev,
+        keys: prev.keys.map((key) =>
+          key.id === keyId ? { ...key, ...updates } : key,
+        ),
+      }));
+    },
+    [],
+  );
+
   const selectKey = useCallback((keyId: number) => {
     setState((prev) => ({ ...prev, selectedKeyId: keyId }));
   }, []);
 
+  const getKey = useCallback(
+    (keyId: number) => state.keys.find((key) => key.id === keyId),
+    [state.keys],
+  );
+
   const value: StreamDeckContextType = {
     state,
     setConnected,
+    updateKey,
     selectKey,
+    getKey,
   };
 
   return (
