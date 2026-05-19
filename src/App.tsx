@@ -64,7 +64,14 @@ function App() {
             <Box sx={{ flex: 2, minWidth: 0, overflow: "auto" }}>
               <StreamDeckGrid />
             </Box>
-            <Box sx={{ width: 360, maxWidth: "35vw", overflow: "auto" }}>
+            <Box
+              sx={{
+                width: 360,
+                maxWidth: "35vw",
+                minHeight: 0,
+                overflow: "hidden",
+              }}
+            >
               <KeyEditor />
             </Box>
           </Box>

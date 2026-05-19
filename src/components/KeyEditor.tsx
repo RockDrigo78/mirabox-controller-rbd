@@ -68,7 +68,7 @@ export const KeyEditor = () => {
 
   if (state.selectedKeyId === null) {
     return (
-      <Card sx={{ height: "100%" }}>
+      <Card sx={{ height: "100%", overflow: "auto" }}>
         <CardHeader
           title="Key Editor"
           subheader="Select a key to configure it"
@@ -212,12 +212,28 @@ export const KeyEditor = () => {
   };
 
   return (
-    <Card sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+    <Card
+      sx={{
+        height: "100%",
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       <CardHeader
         title={`Key ${key.id + 1}`}
         subheader="Images are cropped to a square (cover fit) before upload"
       />
-      <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <CardContent
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+        }}
+      >
         <TextField
           label="Display label"
           value={key.label ?? ""}
@@ -230,6 +246,8 @@ export const KeyEditor = () => {
         <Paper
           variant="outlined"
           sx={{
+            width: "100%",
+            flexShrink: 0,
             aspectRatio: "1",
             display: "flex",
             alignItems: "center",
