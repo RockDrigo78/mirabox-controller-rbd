@@ -1,17 +1,89 @@
 import { app, BrowserWindow, Menu, ipcMain } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import path from "path";
+import { spawn } from "child_process";
 import { fileURLToPath } from "url";
+import { shell } from "electron";
 import { MiraboxStreamDock } from "./streamdock.js";
+
+type StreamDeckKeyAction = {
+  type: "none" | "open-url" | "launch-app" | "shell-command";
+  label?: string;
+  url?: string;
+  path?: string;
+  args?: string;
+  workingDirectory?: string;
+  command?: string;
+};
 
 let mainWindow: BrowserWindow | null = null;
 const streamDock = new MiraboxStreamDock();
+const keyActions = new Map<number, StreamDeckKeyAction>();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const isDev = Boolean(devServerUrl);
+
+const splitArguments = (value: string | undefined): string[] => {
+  if (!value) {
+    return [];
+  }
+
+  const matches = value.match(/"([^"]*)"|'([^']*)'|[^\s]+/g) ?? [];
+  return matches.map((match) => match.replace(/^['"]|['"]$/g, ""));
+};
+
+const executeKeyAction = async (action: StreamDeckKeyAction | undefined) => {
+  if (!action || action.type === "none") {
+    return;
+  }
+
+  if (action.type === "open-url") {
+    if (!action.url) {
+      throw new Error("The URL action requires a URL.");
+    }
+
+    await shell.openExternal(action.url);
+    return;
+  }
+
+  if (action.type === "launch-app") {
+    if (!action.path) {
+      throw new Error("The app action requires an executable path.");
+    }
+
+    const child = spawn(action.path, splitArguments(action.args), {
+      cwd: action.workingDirectory || path.dirname(action.path),
+      detached: true,
+      shell: false,
+      stdio: "ignore",
+      windowsHide: false,
+    });
+    child.unref();
+    return;
+  }
+
+  if (!action.command) {
+    throw new Error("The shell action requires a command.");
+  }
+
+  const shellName = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
+  const shellArgs =
+    process.platform === "win32"
+      ? ["/c", action.command]
+      : ["-lc", action.command];
+
+  const child = spawn(shellName, shellArgs, {
+    cwd: action.workingDirectory || app.getPath("home"),
+    detached: true,
+    shell: false,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref();
+};
 
 const registerIpcHandlers = () => {
   ipcMain.handle("streamdock:connect", async () => streamDock.connect());
@@ -34,6 +106,24 @@ const registerIpcHandlers = () => {
     "streamdock:preprocessKeyImage",
     async (_event, sourceDataUrl: string) =>
       streamDock.preprocessKeyImageDataUrl(sourceDataUrl),
+  );
+  ipcMain.handle(
+    "streamdock:setKeyAction",
+    async (
+      _event,
+      payload: { keyId: number; action?: StreamDeckKeyAction },
+    ) => {
+      if (payload.action && payload.action.type !== "none") {
+        keyActions.set(payload.keyId, payload.action);
+        return;
+      }
+
+      keyActions.delete(payload.keyId);
+    },
+  );
+  ipcMain.handle(
+    "streamdock:executeKeyAction",
+    async (_event, action?: StreamDeckKeyAction) => executeKeyAction(action),
   );
 };
 
@@ -67,6 +157,19 @@ const createWindow = () => {
 
 app.on("ready", () => {
   registerIpcHandlers();
+  streamDock.setKeyStateListener(({ keyId, isPressed }) => {
+    if (!isPressed) {
+      return;
+    }
+
+    void executeKeyAction(keyActions.get(keyId)).catch((error: unknown) => {
+      console.error(`Failed to execute key ${keyId + 1} action`, error);
+      mainWindow?.webContents.send(
+        "streamdock:key-action-error",
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+  });
   createWindow();
 });
 

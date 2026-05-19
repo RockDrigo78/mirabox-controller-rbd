@@ -22,13 +22,13 @@ type SupportedDevice = {
 };
 
 const HARDWARE_KEY_IDS_293S = [
-  0x0d, 0x0a, 0x07, 0x04, 0x01, 0x0e, 0x0b, 0x08, 0x05, 0x02, 0x0f, 0x0c,
-  0x09, 0x06, 0x03,
+  0x0d, 0x0a, 0x07, 0x04, 0x01, 0x0e, 0x0b, 0x08, 0x05, 0x02, 0x0f, 0x0c, 0x09,
+  0x06, 0x03,
 ] as const;
 
 const HARDWARE_KEY_IDS_293V3 = [
-  0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x01, 0x02,
-  0x03, 0x04, 0x05,
+  0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x01, 0x02, 0x03,
+  0x04, 0x05,
 ] as const;
 
 type GifFrame = {
@@ -172,7 +172,8 @@ const openStreamDockHandle = (
   const openAttempts: Array<() => HID.HID> = [
     () => new HID.HID(candidate.path!, { nonExclusive: true }),
     () => new HID.HID(candidate.path!),
-    () => new HID.HID(device.vendorId, device.productId, { nonExclusive: true }),
+    () =>
+      new HID.HID(device.vendorId, device.productId, { nonExclusive: true }),
     () => new HID.HID(device.vendorId, device.productId),
   ];
 
@@ -216,7 +217,14 @@ import type { StreamDockConnectionInfo } from "./streamdock-types.js";
 
 export type { StreamDockConnectionInfo };
 
-const toConnectionInfo = (device: SupportedDevice): StreamDockConnectionInfo => ({
+type KeyStateListener = (payload: {
+  keyId: number;
+  isPressed: boolean;
+}) => void;
+
+const toConnectionInfo = (
+  device: SupportedDevice,
+): StreamDockConnectionInfo => ({
   vendorId: device.vendorId,
   productId: device.productId,
   packetSize: device.imagePacketSize,
@@ -229,6 +237,18 @@ export class MiraboxStreamDock {
   private deviceInfo: SupportedDevice | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private animationTimers = new Map<number, NodeJS.Timeout>();
+  private keyStateListener: KeyStateListener | null = null;
+  private readonly handleDeviceData = (data: Buffer) => {
+    const keyId = this.decodeKeyId(data);
+    if (keyId === null) {
+      return;
+    }
+
+    this.keyStateListener?.({ keyId, isPressed: data[10] === 1 });
+  };
+  private readonly handleDeviceError = () => {
+    this.disconnect();
+  };
 
   get isConnected(): boolean {
     return this.device !== null;
@@ -273,6 +293,8 @@ export class MiraboxStreamDock {
       try {
         this.device = openStreamDockHandle(supported, candidate);
         this.deviceInfo = supported;
+        this.device.on("data", this.handleDeviceData);
+        this.device.on("error", this.handleDeviceError);
         this.setBrightness(100);
         this.startHeartbeat();
         return toConnectionInfo(supported);
@@ -292,6 +314,8 @@ export class MiraboxStreamDock {
     this.clearAnimations();
 
     if (this.device) {
+      this.device.off("data", this.handleDeviceData);
+      this.device.off("error", this.handleDeviceError);
       this.device.close();
       this.device = null;
     }
@@ -301,6 +325,10 @@ export class MiraboxStreamDock {
 
   setBrightness(percent: number): void {
     this.sendSimple([0x4c, 0x49, 0x47, 0x00, 0x00, clampBrightness(percent)]);
+  }
+
+  setKeyStateListener(listener: KeyStateListener | null): void {
+    this.keyStateListener = listener;
   }
 
   clearKeyImage(keyId: number): void {
@@ -484,5 +512,13 @@ export class MiraboxStreamDock {
     if (!Number.isInteger(keyId) || keyId < 0 || keyId > 14) {
       throw new Error("Key index must be between 0 and 14");
     }
+  }
+
+  private decodeKeyId(data: Buffer): number | null {
+    if (!this.deviceInfo || data.length < 11) {
+      return null;
+    }
+
+    return this.deviceInfo.hardwareKeyIds.indexOf(data[9]) ?? null;
   }
 }

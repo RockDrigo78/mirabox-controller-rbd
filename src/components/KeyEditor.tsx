@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   Alert,
   Box,
@@ -6,15 +6,26 @@ import {
   Card,
   CardContent,
   CardHeader,
+  FormControl,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
+  Stack,
+  TextField,
   Typography,
 } from "@mui/material";
 import {
   Delete as DeleteIcon,
   Image as ImageIcon,
+  Launch as LaunchIcon,
   UploadFile as UploadFileIcon,
 } from "@mui/icons-material";
 import { useStreamDeck } from "../context/useStreamDeck";
+import type {
+  StreamDeckKeyAction,
+  StreamDeckKeyActionType,
+} from "../types/streamdeck";
 
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) {
@@ -24,11 +35,36 @@ const getErrorMessage = (error: unknown): string => {
   return "Failed to update the Stream Deck key image.";
 };
 
+const isWindows =
+  typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");
+
 export const KeyEditor = () => {
   const { state, getKey, updateKey, clearKeyImageState } = useStreamDeck();
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const isConnectedRef = useRef(state.isConnected);
-  isConnectedRef.current = state.isConnected;
+
+  useEffect(() => {
+    isConnectedRef.current = state.isConnected;
+  }, [state.isConnected]);
+
+  const syncActionToNative = (keyId: number, action?: StreamDeckKeyAction) => {
+    const streamDockApi = window.streamDockApi;
+    if (!streamDockApi) {
+      return;
+    }
+
+    void streamDockApi.setKeyAction(keyId, action).catch((error) => {
+      console.error(error);
+      setActionMessage(getErrorMessage(error));
+    });
+  };
+
+  const updateKeyAction = (keyId: number, updates?: StreamDeckKeyAction) => {
+    setActionMessage(null);
+    updateKey(keyId, { action: updates });
+    syncActionToNative(keyId, updates);
+  };
 
   if (state.selectedKeyId === null) {
     return (
@@ -73,7 +109,8 @@ export const KeyEditor = () => {
         let previewImageData = rawImageData;
         if (streamDockApi && !isGif) {
           try {
-            previewImageData = await streamDockApi.preprocessKeyImage(rawImageData);
+            previewImageData =
+              await streamDockApi.preprocessKeyImage(rawImageData);
           } catch (error) {
             console.error(error);
             setUploadError(getErrorMessage(error));
@@ -127,6 +164,53 @@ export const KeyEditor = () => {
     })();
   };
 
+  const action = key.action;
+  const actionType: StreamDeckKeyActionType = action?.type ?? "none";
+
+  const handleActionTypeChange = (nextType: StreamDeckKeyActionType) => {
+    if (nextType === "none") {
+      updateKeyAction(key.id, undefined);
+      return;
+    }
+
+    updateKeyAction(key.id, { type: nextType });
+  };
+
+  const updateActionField = <K extends keyof StreamDeckKeyAction>(
+    field: K,
+    value: StreamDeckKeyAction[K],
+  ) => {
+    const nextAction: StreamDeckKeyAction = {
+      ...(action ?? { type: actionType }),
+      [field]: value,
+    };
+    updateKeyAction(key.id, nextAction);
+  };
+
+  const handleTestAction = () => {
+    if (!action || action.type === "none") {
+      setActionMessage("Configure an action before testing it.");
+      return;
+    }
+
+    const streamDockApi = window.streamDockApi;
+    if (!streamDockApi) {
+      setActionMessage("Action testing is only available in the Electron app.");
+      return;
+    }
+
+    setActionMessage(null);
+    void streamDockApi
+      .executeKeyAction(action)
+      .then(() => {
+        setActionMessage("Action executed.");
+      })
+      .catch((error) => {
+        console.error(error);
+        setActionMessage(getErrorMessage(error));
+      });
+  };
+
   return (
     <Card sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <CardHeader
@@ -134,6 +218,15 @@ export const KeyEditor = () => {
         subheader="Images are cropped to a square (cover fit) before upload"
       />
       <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <TextField
+          label="Display label"
+          value={key.label ?? ""}
+          onChange={(event) =>
+            updateKey(key.id, { label: event.target.value || undefined })
+          }
+          helperText="Shown on the key preview and on the device overlay."
+        />
+
         <Paper
           variant="outlined"
           sx={{
@@ -184,12 +277,108 @@ export const KeyEditor = () => {
           Clear Key Image
         </Button>
 
+        <Stack spacing={2}>
+          <FormControl fullWidth>
+            <InputLabel id="key-action-type-label">Action</InputLabel>
+            <Select
+              labelId="key-action-type-label"
+              label="Action"
+              value={actionType}
+              onChange={(event) =>
+                handleActionTypeChange(
+                  event.target.value as StreamDeckKeyActionType,
+                )
+              }
+            >
+              <MenuItem value="none">No action</MenuItem>
+              <MenuItem value="launch-app">Launch application</MenuItem>
+              <MenuItem value="open-url">Open URL</MenuItem>
+              <MenuItem value="shell-command">Run shell command</MenuItem>
+            </Select>
+          </FormControl>
+
+          {actionType === "launch-app" ? (
+            <>
+              <TextField
+                label="Executable path"
+                value={action?.path ?? ""}
+                onChange={(event) =>
+                  updateActionField("path", event.target.value)
+                }
+                placeholder="C:\\Program Files\\App\\app.exe"
+              />
+              <TextField
+                label="Arguments"
+                value={action?.args ?? ""}
+                onChange={(event) =>
+                  updateActionField("args", event.target.value)
+                }
+                helperText="Optional. Quotes are supported for paths with spaces."
+              />
+              <TextField
+                label="Working directory"
+                value={action?.workingDirectory ?? ""}
+                onChange={(event) =>
+                  updateActionField("workingDirectory", event.target.value)
+                }
+                helperText="Optional. Defaults to the executable folder."
+              />
+            </>
+          ) : null}
+
+          {actionType === "open-url" ? (
+            <TextField
+              label="URL"
+              value={action?.url ?? ""}
+              onChange={(event) => updateActionField("url", event.target.value)}
+              placeholder="https://example.com"
+            />
+          ) : null}
+
+          {actionType === "shell-command" ? (
+            <>
+              <TextField
+                label="Command"
+                value={action?.command ?? ""}
+                onChange={(event) =>
+                  updateActionField("command", event.target.value)
+                }
+                placeholder={isWindows ? "start notepad" : "open -a Notes"}
+              />
+              <TextField
+                label="Working directory"
+                value={action?.workingDirectory ?? ""}
+                onChange={(event) =>
+                  updateActionField("workingDirectory", event.target.value)
+                }
+                helperText="Optional. Defaults to your home directory."
+              />
+            </>
+          ) : null}
+
+          <Button
+            variant="outlined"
+            startIcon={<LaunchIcon />}
+            onClick={handleTestAction}
+            disabled={actionType === "none"}
+          >
+            Test Action
+          </Button>
+        </Stack>
+
         {uploadError ? <Alert severity="error">{uploadError}</Alert> : null}
+        {actionMessage ? (
+          <Alert
+            severity={actionMessage === "Action executed." ? "success" : "info"}
+          >
+            {actionMessage}
+          </Alert>
+        ) : null}
 
         <Alert severity={state.isConnected ? "success" : "warning"}>
           {state.isConnected
-            ? "Images are preprocessed to a square cover crop, then sent to the device."
-            : "Images are preprocessed when selected and will upload on the next connection."}
+            ? "Images sync to the device immediately, and programmed actions run when the hardware key is pressed."
+            : "Images and actions are saved locally and will sync on the next connection."}
         </Alert>
       </CardContent>
     </Card>

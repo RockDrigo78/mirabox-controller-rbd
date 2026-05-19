@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStreamDeck } from "../context/useStreamDeck";
 
 import {
@@ -26,7 +26,19 @@ export const StatusBar = () => {
   const { state, setConnected } = useStreamDeck();
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const hasNativeBridge = Boolean(window.streamDockApi);
+
+  useEffect(() => {
+    const streamDockApi = window.streamDockApi;
+    if (!streamDockApi) {
+      return;
+    }
+
+    return streamDockApi.onKeyActionError((message) => {
+      setActionError(message);
+    });
+  }, []);
 
   const handleConnect = async () => {
     if (!hasNativeBridge) {
@@ -52,6 +64,18 @@ export const StatusBar = () => {
         setConnected(true);
 
         for (const key of state.keys) {
+          try {
+            await streamDockApi.setKeyAction(key.id, key.action);
+          } catch (syncError) {
+            console.error(
+              `Failed to sync action for key ${key.id + 1}`,
+              syncError,
+            );
+            setConnectionError(
+              `Connected, but key ${key.id + 1} action failed to sync. Re-save the action and reconnect.`,
+            );
+          }
+
           if (!key.image) {
             continue;
           }
@@ -146,6 +170,21 @@ export const StatusBar = () => {
           sx={{ width: "100%" }}
         >
           {connectionError}
+        </Alert>
+      </Snackbar>
+
+      <Snackbar
+        open={actionError !== null}
+        autoHideDuration={8000}
+        onClose={() => setActionError(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity="error"
+          onClose={() => setActionError(null)}
+          sx={{ width: "100%" }}
+        >
+          {actionError}
         </Alert>
       </Snackbar>
     </>

@@ -6,6 +6,8 @@ type StreamDockConnectionInfo = {
   productName: string;
 };
 
+import type { StreamDeckKeyAction } from "./streamdeck";
+
 type StreamDockApi = {
   connect: () => Promise<StreamDockConnectionInfo>;
   disconnect: () => Promise<void>;
@@ -13,6 +15,9 @@ type StreamDockApi = {
   preprocessKeyImage: (dataUrl: string) => Promise<string>;
   setKeyImage: (keyId: number, dataUrl: string) => Promise<void>;
   clearKeyImage: (keyId: number) => Promise<void>;
+  setKeyAction: (keyId: number, action?: StreamDeckKeyAction) => Promise<void>;
+  executeKeyAction: (action?: StreamDeckKeyAction) => Promise<void>;
+  onKeyActionError: (listener: (message: string) => void) => () => void;
 };
 
 declare global {
