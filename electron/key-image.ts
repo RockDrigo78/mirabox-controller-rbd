@@ -10,6 +10,9 @@ export const DEFAULT_KEY_IMAGE_TRANSFORM: KeyImageTransform = {
   rotation: 90,
 };
 
+/** Higher-res previews for the app UI (device uploads still use keySize). */
+export const APP_PREVIEW_KEY_PIXELS = 320;
+
 const MAX_KEY_JPEG_BYTES = 10240;
 
 const escapeXml = (text: string): string =>
@@ -185,12 +188,13 @@ const openImagePipeline = (source: Buffer, page?: number): sharp.Sharp => {
 
 export const buildPreviewKeyPipeline = (
   pipeline: sharp.Sharp,
-  keySize: number,
+  previewSize: number = APP_PREVIEW_KEY_PIXELS,
 ): sharp.Sharp =>
   pipeline
-    .resize(keySize, keySize, {
+    .resize(previewSize, previewSize, {
       fit: "cover",
       position: "centre",
+      kernel: sharp.kernel.lanczos3,
     })
     .flatten({ background: { r: 0, g: 0, b: 0 } });
 
@@ -254,6 +258,21 @@ export const processKeyImageToJpeg = async (
   return encodeKeyJpeg(processed);
 };
 
+export const buildSolidBlackKeyJpeg = async (
+  keyImage: KeyImageTransform,
+): Promise<Buffer> => {
+  return encodeKeyJpeg(
+    sharp({
+      create: {
+        width: keyImage.keySize,
+        height: keyImage.keySize,
+        channels: 3,
+        background: { r: 0, g: 0, b: 0 },
+      },
+    }),
+  );
+};
+
 export const buildLabelOnlyKeyJpeg = async (
   label: string,
   keyImage: KeyImageTransform,
@@ -277,7 +296,7 @@ export const buildLabelOnlyKeyJpeg = async (
 
 export const processKeyImageDataUrl = async (
   sourceDataUrl: string,
-  keyImage: KeyImageTransform,
+  _keyImage: KeyImageTransform,
 ): Promise<string> => {
   const source = parseImageDataUrl(sourceDataUrl);
   const metadata = await sharp(source, { animated: true }).metadata();
@@ -285,9 +304,9 @@ export const processKeyImageDataUrl = async (
 
   const jpeg = await buildPreviewKeyPipeline(
     openImagePipeline(source, isAnimatedGif ? 0 : undefined),
-    keyImage.keySize,
+    APP_PREVIEW_KEY_PIXELS,
   )
-    .jpeg({ quality: 90, chromaSubsampling: "4:2:0" })
+    .jpeg({ quality: 92, chromaSubsampling: "4:4:4" })
     .toBuffer();
 
   return `data:image/jpeg;base64,${jpeg.toString("base64")}`;

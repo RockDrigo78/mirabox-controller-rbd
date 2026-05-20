@@ -61,7 +61,15 @@ function App() {
               minHeight: 0,
             }}
           >
-            <Box sx={{ flex: 2, minWidth: 0, overflow: "auto" }}>
+            <Box
+              sx={{
+                flex: 2,
+                minWidth: 0,
+                overflow: "auto",
+                pt: 1.5,
+                pb: 1,
+              }}
+            >
               <StreamDeckGrid />
             </Box>
             <Box

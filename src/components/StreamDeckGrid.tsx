@@ -3,20 +3,42 @@ import type { StreamDeckKey } from "../context/StreamDeckContext";
 import { Box, Paper, Typography } from "@mui/material";
 import { useState } from "react";
 
+const KEY_CELL_SIZE_PX = 88;
+const KEY_GRID_GAP_PX = 10;
+const KEY_ROW_COUNT = 3;
+const KEY_COLUMN_COUNT = 5;
+const VERTICAL_SCREEN_WIDTH_PX = 64;
+const DEVICE_PANEL_HEIGHT_PX =
+  KEY_ROW_COUNT * KEY_CELL_SIZE_PX + (KEY_ROW_COUNT - 1) * KEY_GRID_GAP_PX;
+
+const keyImageSx = {
+  width: "100%",
+  height: "100%",
+  objectFit: "cover" as const,
+  borderRadius: 1,
+  display: "block",
+};
+
 export const StreamDeckGrid = () => {
   const { state, selectKey } = useStreamDeck();
   const [hoveredId, setHoveredId] = useState<number | null>(null);
 
   return (
-    <Box sx={{ display: "flex", gap: 2 }}>
-      {/* Button Grid */}
+    <Box
+      sx={{
+        display: "flex",
+        gap: 2,
+        justifyContent: "center",
+        alignItems: "flex-start",
+      }}
+    >
       <Box
         sx={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gridTemplateRows: "repeat(5, 1fr)",
-          gap: 2,
-          flex: 2,
+          gridTemplateColumns: `repeat(${KEY_COLUMN_COUNT}, ${KEY_CELL_SIZE_PX}px)`,
+          gridTemplateRows: `repeat(${KEY_ROW_COUNT}, ${KEY_CELL_SIZE_PX}px)`,
+          gap: `${KEY_GRID_GAP_PX}px`,
+          flexShrink: 0,
         }}
       >
         {state.keys.slice(0, 15).map((key: StreamDeckKey) => (
@@ -32,10 +54,10 @@ export const StreamDeckGrid = () => {
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              p: 1,
+              p: 0.75,
               position: "relative",
               overflow: "hidden",
-              transition: "all 0.2s ease",
+              transition: "border-color 0.2s ease, box-shadow 0.2s ease",
               border:
                 state.selectedKeyId === key.id ? "3px solid" : "2px solid",
               borderColor:
@@ -52,7 +74,7 @@ export const StreamDeckGrid = () => {
                     : "0 2px 4px rgba(0, 0, 0, 0.3)",
               "&:hover": {
                 borderColor: "#5a5a6a",
-                transform: "translateY(-2px)",
+                boxShadow: "0 4px 14px rgba(88, 166, 255, 0.35)",
               },
             }}
           >
@@ -61,12 +83,7 @@ export const StreamDeckGrid = () => {
                 component="img"
                 src={key.image}
                 alt={key.label || `Key ${key.id}`}
-                sx={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  borderRadius: 1,
-                }}
+                sx={keyImageSx}
               />
             ) : key.label ? (
               <Typography
@@ -120,22 +137,34 @@ export const StreamDeckGrid = () => {
         ))}
       </Box>
 
-      {!state.isConnected ? (
-        <Paper
-          elevation={3}
-          sx={{
-            flex: 1,
-            minWidth: 100,
-            background: "linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#808080",
-          }}
-        >
-          <Typography variant="h6">Vertical Screen</Typography>
-        </Paper>
-      ) : null}
+      <Paper
+        elevation={state.isConnected ? 0 : 3}
+        sx={{
+          width: VERTICAL_SCREEN_WIDTH_PX,
+          height: DEVICE_PANEL_HEIGHT_PX,
+          flexShrink: 0,
+          background: state.isConnected
+            ? "#000000"
+            : "linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#808080",
+        }}
+      >
+        {!state.isConnected ? (
+          <Typography
+            variant="caption"
+            sx={{
+              writingMode: "vertical-rl",
+              textOrientation: "mixed",
+              letterSpacing: 1,
+            }}
+          >
+            Screen
+          </Typography>
+        ) : null}
+      </Paper>
     </Box>
   );
 };

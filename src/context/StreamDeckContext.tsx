@@ -35,12 +35,12 @@ export interface StreamDeckContextType {
   getKey: (keyId: number) => StreamDeckKey | undefined;
 }
 
-// Initialize grid with 3x5 = 15 keys (MiraBox HSV 293S layout)
+// Initialize grid with 5x3 = 15 keys (MiraBox HSV 293S layout)
 const initializeGrid = (): StreamDeckKey[] => {
   const keys: StreamDeckKey[] = [];
   let id = 0;
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 3; col++) {
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 5; col++) {
       keys.push({
         id,
         row,
@@ -84,12 +84,18 @@ const persistKeys = (keys: StreamDeckKey[]) => {
 
   const payload = keys.reduce<Record<string, StoredStreamDeckKey>>(
     (accumulator, key) => {
-      if (key.image || key.label || key.action) {
-        accumulator[String(key.id)] = {
-          image: key.image,
-          label: key.label,
-          action: key.action,
-        };
+      const storedKey: StoredStreamDeckKey = {};
+      if (key.image) {
+        storedKey.image = key.image;
+      }
+      if (key.label) {
+        storedKey.label = key.label;
+      }
+      if (key.action) {
+        storedKey.action = key.action;
+      }
+      if (Object.keys(storedKey).length > 0) {
+        accumulator[String(key.id)] = storedKey;
       }
 
       return accumulator;
@@ -114,9 +120,18 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
   const updateKey = useCallback(
     (keyId: number, updates: Partial<StreamDeckKey>) => {
       setState((prev) => {
-        const keys = prev.keys.map((key) =>
-          key.id === keyId ? { ...key, ...updates } : key,
-        );
+        const keys = prev.keys.map((key) => {
+          if (key.id !== keyId) {
+            return key;
+          }
+
+          const nextKey = { ...key, ...updates };
+          if ("label" in updates && updates.label === undefined) {
+            delete nextKey.label;
+          }
+
+          return nextKey;
+        });
         persistKeys(keys);
         return {
           ...prev,

@@ -43,15 +43,29 @@ export const KeyEditor = () => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const isConnectedRef = useRef(state.isConnected);
+  const keyImageSyncGenerationRef = useRef(0);
+  const labelSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   useEffect(() => {
     isConnectedRef.current = state.isConnected;
   }, [state.isConnected]);
 
+  useEffect(
+    () => () => {
+      if (labelSyncTimeoutRef.current) {
+        clearTimeout(labelSyncTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
   const syncKeyImageToNative = (
     keyId: number,
     imageDataUrl: string | undefined,
     label: string | undefined,
+    syncGeneration: number,
   ) => {
     const streamDockApi = window.streamDockApi;
     if (!streamDockApi || !isConnectedRef.current) {
@@ -60,17 +74,58 @@ export const KeyEditor = () => {
 
     void (async () => {
       try {
+        if (keyImageSyncGenerationRef.current !== syncGeneration) {
+          return;
+        }
+
         if (!imageDataUrl && !label?.trim()) {
           await streamDockApi.clearKeyImage(keyId);
           return;
         }
 
         await streamDockApi.setKeyImage(keyId, imageDataUrl ?? "", label);
+
+        if (keyImageSyncGenerationRef.current !== syncGeneration) {
+          return;
+        }
       } catch (error) {
+        if (keyImageSyncGenerationRef.current !== syncGeneration) {
+          return;
+        }
+
         console.error(error);
         setUploadError(getErrorMessage(error));
       }
     })();
+  };
+
+  const queueLabelSyncToNative = (
+    keyId: number,
+    imageDataUrl: string | undefined,
+    label: string | undefined,
+  ) => {
+    if (labelSyncTimeoutRef.current) {
+      clearTimeout(labelSyncTimeoutRef.current);
+      labelSyncTimeoutRef.current = null;
+    }
+
+    keyImageSyncGenerationRef.current += 1;
+
+    if (!label?.trim()) {
+      const syncGeneration = keyImageSyncGenerationRef.current;
+      syncKeyImageToNative(keyId, imageDataUrl, undefined, syncGeneration);
+      return;
+    }
+
+    const syncGeneration = keyImageSyncGenerationRef.current;
+    labelSyncTimeoutRef.current = setTimeout(() => {
+      labelSyncTimeoutRef.current = null;
+      if (keyImageSyncGenerationRef.current !== syncGeneration) {
+        return;
+      }
+
+      syncKeyImageToNative(keyId, imageDataUrl, label, syncGeneration);
+    }, 250);
   };
 
   const syncActionToNative = (keyId: number, action?: StreamDeckKeyAction) => {
@@ -184,7 +239,12 @@ export const KeyEditor = () => {
       }
 
       if (labelToKeep?.trim()) {
-        syncKeyImageToNative(keyIdToClear, undefined, labelToKeep);
+        syncKeyImageToNative(
+          keyIdToClear,
+          undefined,
+          labelToKeep,
+          ++keyImageSyncGenerationRef.current,
+        );
         return;
       }
 
@@ -271,9 +331,11 @@ export const KeyEditor = () => {
           label="Display label"
           value={key.label ?? ""}
           onChange={(event) => {
-            const nextLabel = event.target.value || undefined;
+            const rawLabel = event.target.value;
+            const nextLabel =
+              rawLabel.trim() === "" ? undefined : rawLabel;
             updateKey(key.id, { label: nextLabel });
-            syncKeyImageToNative(key.id, key.image, nextLabel);
+            queueLabelSyncToNative(key.id, key.image, nextLabel);
           }}
           helperText="Burned into the key image on the device when connected."
         />
@@ -297,7 +359,12 @@ export const KeyEditor = () => {
               component="img"
               src={key.image}
               alt={key.label || `Key ${key.id + 1}`}
-              sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+              sx={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
             />
           ) : key.label ? (
             <Typography

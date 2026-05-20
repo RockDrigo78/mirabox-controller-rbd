@@ -4,6 +4,7 @@ import type { StreamDockDevicePresence } from "./streamdock-types.js";
 import {
   buildGifFrames,
   buildLabelOnlyKeyJpeg,
+  buildSolidBlackKeyJpeg,
   DEFAULT_KEY_IMAGE_TRANSFORM,
   parseImageDataUrl,
   processKeyImageDataUrl,
@@ -259,6 +260,7 @@ export class MiraboxStreamDock {
   private deviceInfo: SupportedDevice | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private animationTimers = new Map<number, NodeJS.Timeout>();
+  private keyImageOperationQueues = new Map<number, Promise<void>>();
   private keyStateListener: KeyStateListener | null = null;
   private sessionLostListener: (() => void) | null = null;
   private readonly handleDeviceData = (data: Buffer) => {
@@ -337,6 +339,7 @@ export class MiraboxStreamDock {
   disconnect(): void {
     this.stopHeartbeat();
     this.clearAnimations();
+    this.keyImageOperationQueues.clear();
 
     if (this.device) {
       this.device.off("data", this.handleDeviceData);
@@ -365,13 +368,19 @@ export class MiraboxStreamDock {
     this.refresh();
   }
 
-  clearKeyImage(keyId: number): void {
-    this.assertKeyId(keyId);
-    this.stopAnimation(keyId);
-    // Clear uses logical key indices (1–15), not the hardware IDs used for image upload.
-    const logicalKeyIndex = keyId + 1;
-    this.sendSimple([0x43, 0x4c, 0x45, 0x00, 0x00, 0x00, logicalKeyIndex]);
-    this.refresh();
+  clearKeyImage(keyId: number): Promise<void> {
+    return this.runKeyImageOperation(keyId, async () => {
+      this.assertKeyId(keyId);
+      this.stopAnimation(keyId);
+
+      const keyImage = this.getKeyImageTransform();
+      const blackFrame = await buildSolidBlackKeyJpeg(keyImage);
+      await this.sendKeyFrame(keyId, blackFrame);
+
+      const mappedKeyId = this.mapKeyId(keyId);
+      this.sendSimple([0x43, 0x4c, 0x45, 0x00, 0x00, 0x00, mappedKeyId]);
+      this.refresh();
+    });
   }
 
   getKeyImageTransform(): KeyImageTransform {
@@ -390,40 +399,62 @@ export class MiraboxStreamDock {
     payload: string,
     label?: string,
   ): Promise<void> {
-    this.assertKeyId(keyId);
-    const trimmedLabel = label?.trim();
-    const hasImagePayload = payload.trim().length > 0;
-    const keyImage = this.getKeyImageTransform();
+    return this.runKeyImageOperation(keyId, async () => {
+      this.assertKeyId(keyId);
+      const trimmedLabel = label?.trim();
+      const hasImagePayload = payload.trim().length > 0;
+      const keyImage = this.getKeyImageTransform();
 
-    if (!hasImagePayload) {
-      if (!trimmedLabel) {
-        throw new Error("Key image or display label is required.");
+      if (!hasImagePayload) {
+        if (!trimmedLabel) {
+          throw new Error("Key image or display label is required.");
+        }
+
+        this.stopAnimation(keyId);
+        const frame = await buildLabelOnlyKeyJpeg(trimmedLabel, keyImage);
+        await this.sendKeyFrame(keyId, frame);
+        return;
+      }
+
+      const source = parseImageDataUrl(payload);
+      const metadata = await sharp(source, { animated: true }).metadata();
+
+      if ((metadata.pages ?? 1) > 1 && metadata.format === "gif") {
+        const frames = await buildGifFrames(source, keyImage, trimmedLabel);
+        await this.startGifAnimation(keyId, frames);
+        return;
       }
 
       this.stopAnimation(keyId);
-      const frame = await buildLabelOnlyKeyJpeg(trimmedLabel, keyImage);
+
+      const frame = await processKeyImageToJpeg(
+        source,
+        keyImage,
+        undefined,
+        trimmedLabel,
+      );
       await this.sendKeyFrame(keyId, frame);
-      return;
-    }
+    });
+  }
 
-    const source = parseImageDataUrl(payload);
-    const metadata = await sharp(source, { animated: true }).metadata();
-
-    if ((metadata.pages ?? 1) > 1 && metadata.format === "gif") {
-      const frames = await buildGifFrames(source, keyImage, trimmedLabel);
-      await this.startGifAnimation(keyId, frames);
-      return;
-    }
-
-    this.stopAnimation(keyId);
-
-    const frame = await processKeyImageToJpeg(
-      source,
-      keyImage,
-      undefined,
-      trimmedLabel,
+  private runKeyImageOperation<T>(
+    keyId: number,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.keyImageOperationQueues.get(keyId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(operation);
+    const tracked = next.then(
+      () => undefined,
+      () => undefined,
     );
-    await this.sendKeyFrame(keyId, frame);
+
+    this.keyImageOperationQueues.set(keyId, tracked);
+
+    return next.finally(() => {
+      if (this.keyImageOperationQueues.get(keyId) === tracked) {
+        this.keyImageOperationQueues.delete(keyId);
+      }
+    });
   }
 
   private getDeviceInfo(): SupportedDevice {
