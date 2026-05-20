@@ -68,6 +68,19 @@ export const StreamDeckGrid = () => {
                   borderRadius: 1,
                 }}
               />
+            ) : key.label ? (
+              <Typography
+                variant="body2"
+                sx={{
+                  px: 1,
+                  textAlign: "center",
+                  fontWeight: 600,
+                  color: "#ddd",
+                  lineHeight: 1.2,
+                }}
+              >
+                {key.label}
+              </Typography>
             ) : (
               <Typography
                 variant="h5"
@@ -79,13 +92,14 @@ export const StreamDeckGrid = () => {
                 {key.id + 1}
               </Typography>
             )}
-            {key.label && (
+            {key.label && key.image ? (
               <Box
                 sx={{
                   position: "absolute",
                   bottom: 2,
                   left: 2,
                   right: 2,
+                  zIndex: 2,
                   fontSize: "10px",
                   color: "#ddd",
                   background: "rgba(0, 0, 0, 0.6)",
@@ -98,7 +112,7 @@ export const StreamDeckGrid = () => {
               >
                 {key.label}
               </Box>
-            )}
+            ) : null}
           </Paper>
         ))}
       </Box>

@@ -145,18 +145,31 @@ const registerIpcHandlers = () => {
   });
   ipcMain.handle(
     "streamdock:setKeyImage",
-    async (_event, payload: { keyId: number; dataUrl: string }) => {
-      await streamDock.setKeyImageFromDataUrl(payload.keyId, payload.dataUrl);
+    async (
+      _event,
+      payload: { keyId: number; dataUrl: string; label?: string },
+    ) => {
+      await streamDock.setKeyImageFromDataUrl(
+        payload.keyId,
+        payload.dataUrl,
+        payload.label,
+      );
     },
+  );
+  ipcMain.handle(
+    "streamdock:preprocessKeyImage",
+    async (
+      _event,
+      payload: { sourceDataUrl: string; label?: string },
+    ) =>
+      streamDock.preprocessKeyImageDataUrl(
+        payload.sourceDataUrl,
+        payload.label,
+      ),
   );
   ipcMain.handle("streamdock:clearKeyImage", async (_event, keyId: number) => {
     streamDock.clearKeyImage(keyId);
   });
-  ipcMain.handle(
-    "streamdock:preprocessKeyImage",
-    async (_event, sourceDataUrl: string) =>
-      streamDock.preprocessKeyImageDataUrl(sourceDataUrl),
-  );
   ipcMain.handle(
     "streamdock:setKeyAction",
     async (

@@ -22,8 +22,12 @@ type StreamDockApi = {
   connect: () => Promise<StreamDockConnectionInfo>;
   disconnect: () => Promise<void>;
   setBrightness: (value: number) => Promise<void>;
-  preprocessKeyImage: (dataUrl: string) => Promise<string>;
-  setKeyImage: (keyId: number, dataUrl: string) => Promise<void>;
+  preprocessKeyImage: (dataUrl: string, label?: string) => Promise<string>;
+  setKeyImage: (
+    keyId: number,
+    dataUrl: string,
+    label?: string,
+  ) => Promise<void>;
   clearKeyImage: (keyId: number) => Promise<void>;
   setKeyAction: (keyId: number, action?: StreamDeckKeyAction) => Promise<void>;
   executeKeyAction: (action?: StreamDeckKeyAction) => Promise<void>;

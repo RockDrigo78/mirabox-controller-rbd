@@ -3,6 +3,7 @@ import sharp from "sharp";
 import type { StreamDockDevicePresence } from "./streamdock-types.js";
 import {
   buildGifFrames,
+  buildLabelOnlyKeyJpeg,
   DEFAULT_KEY_IMAGE_TRANSFORM,
   parseImageDataUrl,
   processKeyImageDataUrl,
@@ -377,25 +378,55 @@ export class MiraboxStreamDock {
     return this.deviceInfo?.keyImage ?? DEFAULT_KEY_IMAGE_TRANSFORM;
   }
 
-  async preprocessKeyImageDataUrl(sourceDataUrl: string): Promise<string> {
-    return processKeyImageDataUrl(sourceDataUrl, this.getKeyImageTransform());
+  async preprocessKeyImageDataUrl(
+    sourceDataUrl: string,
+    label?: string,
+  ): Promise<string> {
+    return processKeyImageDataUrl(
+      sourceDataUrl,
+      this.getKeyImageTransform(),
+      label,
+    );
   }
 
-  async setKeyImageFromDataUrl(keyId: number, payload: string): Promise<void> {
+  async setKeyImageFromDataUrl(
+    keyId: number,
+    payload: string,
+    label?: string,
+  ): Promise<void> {
     this.assertKeyId(keyId);
-    const source = parseImageDataUrl(payload);
-    const metadata = await sharp(source, { animated: true }).metadata();
+    const trimmedLabel = label?.trim();
+    const hasImagePayload = payload.trim().length > 0;
     const keyImage = this.getKeyImageTransform();
 
+    if (!hasImagePayload) {
+      if (!trimmedLabel) {
+        throw new Error("Key image or display label is required.");
+      }
+
+      this.stopAnimation(keyId);
+      const frame = await buildLabelOnlyKeyJpeg(trimmedLabel, keyImage);
+      await this.sendKeyFrame(keyId, frame);
+      return;
+    }
+
+    const source = parseImageDataUrl(payload);
+    const metadata = await sharp(source, { animated: true }).metadata();
+
     if ((metadata.pages ?? 1) > 1 && metadata.format === "gif") {
-      const frames = await buildGifFrames(source, keyImage);
+      const frames = await buildGifFrames(source, keyImage, trimmedLabel);
       await this.startGifAnimation(keyId, frames);
       return;
     }
 
     this.stopAnimation(keyId);
 
-    const frame = await processKeyImageToJpeg(source, keyImage);
+    const frame = await processKeyImageToJpeg(
+      source,
+      keyImage,
+      undefined,
+      trimmedLabel,
+    );
     await this.sendKeyFrame(keyId, frame);
   }
 

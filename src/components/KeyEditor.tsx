@@ -48,6 +48,31 @@ export const KeyEditor = () => {
     isConnectedRef.current = state.isConnected;
   }, [state.isConnected]);
 
+  const syncKeyImageToNative = (
+    keyId: number,
+    imageDataUrl: string | undefined,
+    label: string | undefined,
+  ) => {
+    const streamDockApi = window.streamDockApi;
+    if (!streamDockApi || !isConnectedRef.current) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        if (!imageDataUrl && !label?.trim()) {
+          await streamDockApi.clearKeyImage(keyId);
+          return;
+        }
+
+        await streamDockApi.setKeyImage(keyId, imageDataUrl ?? "", label);
+      } catch (error) {
+        console.error(error);
+        setUploadError(getErrorMessage(error));
+      }
+    })();
+  };
+
   const syncActionToNative = (keyId: number, action?: StreamDeckKeyAction) => {
     const streamDockApi = window.streamDockApi;
     if (!streamDockApi) {
@@ -107,10 +132,14 @@ export const KeyEditor = () => {
         const isGif = file.type === "image/gif";
 
         let previewImageData = rawImageData;
+        const nextLabel = file.name.replace(/\.[^.]+$/, "");
+
         if (streamDockApi && !isGif) {
           try {
-            previewImageData =
-              await streamDockApi.preprocessKeyImage(rawImageData);
+            previewImageData = await streamDockApi.preprocessKeyImage(
+              rawImageData,
+              nextLabel,
+            );
           } catch (error) {
             console.error(error);
             setUploadError(getErrorMessage(error));
@@ -120,7 +149,7 @@ export const KeyEditor = () => {
 
         updateKey(key.id, {
           image: previewImageData,
-          label: file.name.replace(/\.[^.]+$/, ""),
+          label: nextLabel,
         });
 
         if (!isConnectedRef.current || !streamDockApi) {
@@ -128,7 +157,7 @@ export const KeyEditor = () => {
         }
 
         try {
-          await streamDockApi.setKeyImage(key.id, rawImageData);
+          await streamDockApi.setKeyImage(key.id, rawImageData, nextLabel);
         } catch (error) {
           console.error(error);
           setUploadError(getErrorMessage(error));
@@ -148,10 +177,16 @@ export const KeyEditor = () => {
 
     void (async () => {
       setUploadError(null);
+      const labelToKeep = key.label;
       clearKeyImageState(keyIdToClear);
 
       const streamDockApi = window.streamDockApi;
       if (!isConnectedRef.current || !streamDockApi) {
+        return;
+      }
+
+      if (labelToKeep?.trim()) {
+        syncKeyImageToNative(keyIdToClear, undefined, labelToKeep);
         return;
       }
 
@@ -237,10 +272,12 @@ export const KeyEditor = () => {
         <TextField
           label="Display label"
           value={key.label ?? ""}
-          onChange={(event) =>
-            updateKey(key.id, { label: event.target.value || undefined })
-          }
-          helperText="Shown on the key preview and on the device overlay."
+          onChange={(event) => {
+            const nextLabel = event.target.value || undefined;
+            updateKey(key.id, { label: nextLabel });
+            syncKeyImageToNative(key.id, key.image, nextLabel);
+          }}
+          helperText="Burned into the key image on the device when connected."
         />
 
         <Paper
@@ -254,6 +291,7 @@ export const KeyEditor = () => {
             justifyContent: "center",
             overflow: "hidden",
             bgcolor: "background.default",
+            position: "relative",
           }}
         >
           {key.image ? (
@@ -263,12 +301,46 @@ export const KeyEditor = () => {
               alt={key.label || `Key ${key.id + 1}`}
               sx={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
+          ) : key.label ? (
+            <Typography
+              variant="body1"
+              sx={{
+                px: 1,
+                textAlign: "center",
+                fontWeight: 600,
+                color: "text.primary",
+              }}
+            >
+              {key.label}
+            </Typography>
           ) : (
             <Box sx={{ textAlign: "center", color: "text.secondary" }}>
               <ImageIcon sx={{ fontSize: 48, mb: 1 }} />
               <Typography>No image assigned</Typography>
             </Box>
           )}
+          {key.label && key.image ? (
+            <Box
+              sx={{
+                position: "absolute",
+                bottom: 4,
+                left: 4,
+                right: 4,
+                zIndex: 2,
+                fontSize: "11px",
+                color: "#fff",
+                background: "rgba(0, 0, 0, 0.65)",
+                p: 0.5,
+                borderRadius: 0.5,
+                textAlign: "center",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {key.label}
+            </Box>
+          ) : null}
         </Paper>
 
         <Button

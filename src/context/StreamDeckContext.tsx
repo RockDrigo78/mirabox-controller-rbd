@@ -136,7 +136,6 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
 
         const keyWithoutImage = { ...key };
         delete keyWithoutImage.image;
-        delete keyWithoutImage.label;
         return keyWithoutImage;
       });
 

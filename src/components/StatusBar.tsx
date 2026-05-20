@@ -106,12 +106,16 @@ export const StatusBar = () => {
             );
           }
 
-          if (!key.image) {
+          if (!key.image && !key.label) {
             continue;
           }
 
           try {
-            await streamDockApi.setKeyImage(key.id, key.image);
+            await streamDockApi.setKeyImage(
+              key.id,
+              key.image ?? "",
+              key.label,
+            );
           } catch (syncError) {
             console.error(`Failed to sync key ${key.id + 1}`, syncError);
             setConnectionError(
