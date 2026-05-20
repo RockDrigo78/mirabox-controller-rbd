@@ -19,8 +19,15 @@ import {
   Delete as DeleteIcon,
   Image as ImageIcon,
   Launch as LaunchIcon,
-  UploadFile as UploadFileIcon,
 } from "@mui/icons-material";
+
+const ACCEPTED_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/gif",
+  "image/webp",
+]);
 import { useStreamDeck } from "../context/useStreamDeck";
 import type {
   StreamDeckKeyAction,
@@ -42,7 +49,9 @@ export const KeyEditor = () => {
   const { state, getKey, updateKey, clearKeyImageState } = useStreamDeck();
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const isConnectedRef = useRef(state.isConnected);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const keyImageSyncGenerationRef = useRef(0);
   const labelSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -155,7 +164,8 @@ export const KeyEditor = () => {
         />
         <CardContent>
           <Alert severity="info">
-            Select one of the 15 keys, then upload a PNG, JPG, or GIF.
+            Select one of the 15 keys, then drag an image onto the preview or
+            click it to choose a file.
           </Alert>
         </CardContent>
       </Card>
@@ -167,9 +177,9 @@ export const KeyEditor = () => {
     return null;
   }
 
-  const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
+  const processImageFile = (file: File) => {
+    if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
+      setUploadError("Use a PNG, JPG, GIF, or WebP image.");
       return;
     }
 
@@ -219,7 +229,19 @@ export const KeyEditor = () => {
     };
 
     reader.readAsDataURL(file);
+  };
+
+  const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      processImageFile(file);
+    }
+
     event.target.value = "";
+  };
+
+  const openImageFilePicker = () => {
+    fileInputRef.current?.click();
   };
 
   const handleClear = () => {
@@ -315,7 +337,7 @@ export const KeyEditor = () => {
     >
       <CardHeader
         title={`Key ${key.id + 1}`}
-        subheader="Images are cropped to a square (cover fit) before upload"
+        subheader="Drag and drop or click the preview to add an image"
       />
       <CardContent
         sx={{
@@ -340,8 +362,41 @@ export const KeyEditor = () => {
           helperText="Burned into the key image on the device when connected."
         />
 
+        <input
+          ref={fileInputRef}
+          hidden
+          type="file"
+          accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+          onChange={handleImageUpload}
+        />
+
         <Paper
           variant="outlined"
+          onClick={openImageFilePicker}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setIsDragOver(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setIsDragOver(true);
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            if (event.currentTarget.contains(event.relatedTarget as Node)) {
+              return;
+            }
+
+            setIsDragOver(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setIsDragOver(false);
+            const file = event.dataTransfer.files[0];
+            if (file) {
+              processImageFile(file);
+            }
+          }}
           sx={{
             width: "100%",
             flexShrink: 0,
@@ -350,8 +405,12 @@ export const KeyEditor = () => {
             alignItems: "center",
             justifyContent: "center",
             overflow: "hidden",
-            bgcolor: "background.default",
+            bgcolor: isDragOver ? "action.hover" : "background.default",
             position: "relative",
+            cursor: "pointer",
+            borderStyle: isDragOver ? "dashed" : "solid",
+            borderColor: isDragOver ? "primary.main" : undefined,
+            transition: "background-color 0.15s ease, border-color 0.15s ease",
           }}
         >
           {key.image ? (
@@ -364,6 +423,7 @@ export const KeyEditor = () => {
                 height: "100%",
                 objectFit: "cover",
                 display: "block",
+                pointerEvents: "none",
               }}
             />
           ) : key.label ? (
@@ -374,14 +434,26 @@ export const KeyEditor = () => {
                 textAlign: "center",
                 fontWeight: 600,
                 color: "text.primary",
+                pointerEvents: "none",
               }}
             >
               {key.label}
             </Typography>
           ) : (
-            <Box sx={{ textAlign: "center", color: "text.secondary" }}>
+            <Box
+              sx={{
+                textAlign: "center",
+                color: "text.secondary",
+                pointerEvents: "none",
+                px: 2,
+              }}
+            >
               <ImageIcon sx={{ fontSize: 48, mb: 1 }} />
-              <Typography>No image assigned</Typography>
+              <Typography variant="body2">
+                {isDragOver
+                  ? "Drop image here"
+                  : "Drag and drop an image, or click to browse"}
+              </Typography>
             </Box>
           )}
           {key.label && key.image ? (
@@ -404,26 +476,13 @@ export const KeyEditor = () => {
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
+                pointerEvents: "none",
               }}
             >
               {key.label}
             </Box>
           ) : null}
         </Paper>
-
-        <Button
-          component="label"
-          variant="contained"
-          startIcon={<UploadFileIcon />}
-        >
-          Upload Image or GIF
-          <input
-            hidden
-            type="file"
-            accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
-            onChange={handleImageUpload}
-          />
-        </Button>
 
         <Button
           variant="outlined"
