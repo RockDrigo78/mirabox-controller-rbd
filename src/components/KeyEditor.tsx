@@ -28,6 +28,7 @@ const ACCEPTED_IMAGE_TYPES = new Set([
   "image/gif",
   "image/webp",
 ]);
+import { KeyLabelDisplay } from "./KeyLabelDisplay";
 import { useStreamDeck } from "../context/useStreamDeck";
 import type {
   StreamDeckKeyAction,
@@ -427,18 +428,7 @@ export const KeyEditor = () => {
               }}
             />
           ) : key.label ? (
-            <Typography
-              variant="body1"
-              sx={{
-                px: 1,
-                textAlign: "center",
-                fontWeight: 600,
-                color: "text.primary",
-                pointerEvents: "none",
-              }}
-            >
-              {key.label}
-            </Typography>
+            <KeyLabelDisplay label={key.label} variant="standalone" />
           ) : (
             <Box
               sx={{
@@ -457,30 +447,7 @@ export const KeyEditor = () => {
             </Box>
           )}
           {key.label && key.image ? (
-            <Box
-              sx={{
-                position: "absolute",
-                bottom: 0,
-                left: 0,
-                right: 0,
-                zIndex: 2,
-                fontSize: "11px",
-                color: "#fff",
-                background:
-                  "linear-gradient(to top, rgba(0, 0, 0, 0.62) 0%, rgba(0, 0, 0, 0.28) 45%, transparent 100%)",
-                pt: 3,
-                pb: 1,
-                px: 1,
-                textAlign: "center",
-                textShadow: "0 1px 2px rgba(0,0,0,0.85)",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                pointerEvents: "none",
-              }}
-            >
-              {key.label}
-            </Box>
+            <KeyLabelDisplay label={key.label} variant="overlay" />
           ) : null}
         </Paper>
 

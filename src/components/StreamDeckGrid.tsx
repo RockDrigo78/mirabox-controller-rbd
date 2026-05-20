@@ -1,5 +1,6 @@
 import { useStreamDeck } from "../context/useStreamDeck";
 import type { StreamDeckKey } from "../context/StreamDeckContext";
+import { KeyLabelDisplay } from "./KeyLabelDisplay";
 import { Box, Paper, Typography } from "@mui/material";
 import { useState } from "react";
 
@@ -86,18 +87,7 @@ export const StreamDeckGrid = () => {
                 sx={keyImageSx}
               />
             ) : key.label ? (
-              <Typography
-                variant="body2"
-                sx={{
-                  px: 1,
-                  textAlign: "center",
-                  fontWeight: 600,
-                  color: "#ddd",
-                  lineHeight: 1.2,
-                }}
-              >
-                {key.label}
-              </Typography>
+              <KeyLabelDisplay label={key.label} variant="standalone" />
             ) : (
               <Typography
                 variant="h5"
@@ -110,28 +100,7 @@ export const StreamDeckGrid = () => {
               </Typography>
             )}
             {key.label && key.image ? (
-              <Box
-                sx={{
-                  position: "absolute",
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  zIndex: 2,
-                  fontSize: "10px",
-                  color: "#fff",
-                  background:
-                    "linear-gradient(to top, rgba(0, 0, 0, 0.62) 0%, rgba(0, 0, 0, 0.28) 45%, transparent 100%)",
-                  pt: 3,
-                  pb: 0.75,
-                  px: 1,
-                  textShadow: "0 1px 2px rgba(0,0,0,0.85)",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {key.label}
-              </Box>
+              <KeyLabelDisplay label={key.label} variant="overlay" fontSize="10px" />
             ) : null}
           </Paper>
         ))}
