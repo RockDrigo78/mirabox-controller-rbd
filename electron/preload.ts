@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { StreamDockConnectionInfo } from "./streamdock-types.js";
+import type {
+  StreamDockConnectionInfo,
+  StreamDockDevicePresence,
+} from "./streamdock-types.js";
 
 type StreamDeckKeyAction = {
   type: "none" | "open-url" | "launch-app" | "shell-command";
@@ -12,6 +15,11 @@ type StreamDeckKeyAction = {
 };
 
 export type StreamDockApi = {
+  getDevicePresence: () => Promise<StreamDockDevicePresence>;
+  onDevicePresenceChanged: (
+    listener: (presence: StreamDockDevicePresence) => void,
+  ) => () => void;
+  onSessionEnded: (listener: () => void) => () => void;
   connect: () => Promise<StreamDockConnectionInfo>;
   disconnect: () => Promise<void>;
   setBrightness: (value: number) => Promise<void>;
@@ -24,6 +32,29 @@ export type StreamDockApi = {
 };
 
 const api: StreamDockApi = {
+  getDevicePresence: () =>
+    ipcRenderer.invoke("streamdock:getDevicePresence"),
+  onDevicePresenceChanged: (listener) => {
+    const subscription = (
+      _event: Electron.IpcRendererEvent,
+      presence: StreamDockDevicePresence,
+    ) => {
+      listener(presence);
+    };
+    ipcRenderer.on("streamdock:device-presence-changed", subscription);
+    return () => {
+      ipcRenderer.off("streamdock:device-presence-changed", subscription);
+    };
+  },
+  onSessionEnded: (listener) => {
+    const subscription = () => {
+      listener();
+    };
+    ipcRenderer.on("streamdock:session-ended", subscription);
+    return () => {
+      ipcRenderer.off("streamdock:session-ended", subscription);
+    };
+  },
   connect: () => ipcRenderer.invoke("streamdock:connect"),
   disconnect: () => ipcRenderer.invoke("streamdock:disconnect"),
   setBrightness: (value) =>

@@ -12,7 +12,16 @@ import {
   Snackbar,
   Alert,
 } from "@mui/material";
-import { Devices as DevicesIcon } from "@mui/icons-material";
+import {
+  Devices as DevicesIcon,
+  Usb as UsbIcon,
+  UsbOff as UsbOffIcon,
+} from "@mui/icons-material";
+
+type StreamDockDevicePresence = {
+  isAttached: boolean;
+  productName?: string;
+};
 
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) {
@@ -27,6 +36,8 @@ export const StatusBar = () => {
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [devicePresence, setDevicePresence] =
+    useState<StreamDockDevicePresence>({ isAttached: false });
   const hasNativeBridge = Boolean(window.streamDockApi);
 
   useEffect(() => {
@@ -35,10 +46,29 @@ export const StatusBar = () => {
       return;
     }
 
-    return streamDockApi.onKeyActionError((message) => {
-      setActionError(message);
+    void streamDockApi.getDevicePresence().then(setDevicePresence);
+
+    const unsubscribePresence = streamDockApi.onDevicePresenceChanged(
+      setDevicePresence,
+    );
+    const unsubscribeSessionEnded = streamDockApi.onSessionEnded(() => {
+      setConnected(false);
+      setConnectionError(
+        "The MiraBox was unplugged or lost connection. Plug it back in and connect again.",
+      );
     });
-  }, []);
+    const unsubscribeKeyActionError = streamDockApi.onKeyActionError(
+      (message) => {
+        setActionError(message);
+      },
+    );
+
+    return () => {
+      unsubscribePresence();
+      unsubscribeSessionEnded();
+      unsubscribeKeyActionError();
+    };
+  }, [setConnected]);
 
   const handleConnect = async () => {
     if (!hasNativeBridge) {
@@ -116,13 +146,27 @@ export const StatusBar = () => {
             </Typography>
           </Box>
           <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+            {hasNativeBridge ? (
+              <Chip
+                icon={devicePresence.isAttached ? <UsbIcon /> : <UsbOffIcon />}
+                label={
+                  devicePresence.isAttached
+                    ? devicePresence.productName
+                      ? `${devicePresence.productName} detected`
+                      : "Device detected"
+                    : "No device"
+                }
+                color={devicePresence.isAttached ? "success" : "default"}
+                variant="outlined"
+              />
+            ) : null}
             <Chip
               icon={<DevicesIcon />}
               label={
                 hasNativeBridge
                   ? state.isConnected
-                    ? "Connected"
-                    : "Disconnected"
+                    ? "App connected"
+                    : "App disconnected"
                   : "Browser Preview"
               }
               color={
@@ -138,7 +182,9 @@ export const StatusBar = () => {
               variant="contained"
               color={state.isConnected ? "error" : "success"}
               onClick={() => void handleConnect()}
-              disabled={connecting || !hasNativeBridge}
+              disabled={
+                connecting || !hasNativeBridge || !devicePresence.isAttached
+              }
               sx={{ minWidth: 120 }}
             >
               {connecting ? (

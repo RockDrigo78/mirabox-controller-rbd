@@ -6,9 +6,19 @@ type StreamDockConnectionInfo = {
   productName: string;
 };
 
+type StreamDockDevicePresence = {
+  isAttached: boolean;
+  productName?: string;
+};
+
 import type { StreamDeckKeyAction } from "./streamdeck";
 
 type StreamDockApi = {
+  getDevicePresence: () => Promise<StreamDockDevicePresence>;
+  onDevicePresenceChanged: (
+    listener: (presence: StreamDockDevicePresence) => void,
+  ) => () => void;
+  onSessionEnded: (listener: () => void) => () => void;
   connect: () => Promise<StreamDockConnectionInfo>;
   disconnect: () => Promise<void>;
   setBrightness: (value: number) => Promise<void>;

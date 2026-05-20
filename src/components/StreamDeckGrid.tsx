@@ -103,21 +103,22 @@ export const StreamDeckGrid = () => {
         ))}
       </Box>
 
-      {/* Vertical Screen Placeholder */}
-      <Paper
-        elevation={3}
-        sx={{
-          flex: 1,
-          minWidth: 100,
-          background: "linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#808080",
-        }}
-      >
-        <Typography variant="h6">Vertical Screen</Typography>
-      </Paper>
+      {!state.isConnected ? (
+        <Paper
+          elevation={3}
+          sx={{
+            flex: 1,
+            minWidth: 100,
+            background: "linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#808080",
+          }}
+        >
+          <Typography variant="h6">Vertical Screen</Typography>
+        </Paper>
+      ) : null}
     </Box>
   );
 };

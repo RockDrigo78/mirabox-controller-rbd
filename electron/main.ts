@@ -4,7 +4,11 @@ import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 import { shell } from "electron";
-import { MiraboxStreamDock } from "./streamdock.js";
+import {
+  MiraboxStreamDock,
+  detectStreamDockPresence,
+} from "./streamdock.js";
+import type { StreamDockDevicePresence } from "./streamdock-types.js";
 
 type StreamDeckKeyAction = {
   type: "none" | "open-url" | "launch-app" | "shell-command";
@@ -19,6 +23,49 @@ type StreamDeckKeyAction = {
 let mainWindow: BrowserWindow | null = null;
 const streamDock = new MiraboxStreamDock();
 const keyActions = new Map<number, StreamDeckKeyAction>();
+const DEVICE_PRESENCE_POLL_MS = 2000;
+let devicePresencePollTimer: NodeJS.Timeout | null = null;
+let lastDevicePresence: StreamDockDevicePresence = { isAttached: false };
+
+const presenceSignature = (presence: StreamDockDevicePresence): string =>
+  `${presence.isAttached}:${presence.productName ?? ""}`;
+
+const broadcastDevicePresence = () => {
+  const presence = detectStreamDockPresence();
+  if (presenceSignature(presence) !== presenceSignature(lastDevicePresence)) {
+    lastDevicePresence = presence;
+    mainWindow?.webContents.send(
+      "streamdock:device-presence-changed",
+      presence,
+    );
+  }
+
+  if (!presence.isAttached && streamDock.isConnected) {
+    streamDock.disconnect();
+    mainWindow?.webContents.send("streamdock:session-ended");
+  }
+};
+
+const startDevicePresenceMonitoring = () => {
+  if (devicePresencePollTimer) {
+    return;
+  }
+
+  broadcastDevicePresence();
+  devicePresencePollTimer = setInterval(
+    broadcastDevicePresence,
+    DEVICE_PRESENCE_POLL_MS,
+  );
+};
+
+const stopDevicePresenceMonitoring = () => {
+  if (!devicePresencePollTimer) {
+    return;
+  }
+
+  clearInterval(devicePresencePollTimer);
+  devicePresencePollTimer = null;
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,6 +133,9 @@ const executeKeyAction = async (action: StreamDeckKeyAction | undefined) => {
 };
 
 const registerIpcHandlers = () => {
+  ipcMain.handle("streamdock:getDevicePresence", async () =>
+    detectStreamDockPresence(),
+  );
   ipcMain.handle("streamdock:connect", async () => streamDock.connect());
   ipcMain.handle("streamdock:disconnect", async () => {
     streamDock.disconnect();
@@ -157,6 +207,10 @@ const createWindow = () => {
 
 app.on("ready", () => {
   registerIpcHandlers();
+  startDevicePresenceMonitoring();
+  streamDock.setSessionLostListener(() => {
+    mainWindow?.webContents.send("streamdock:session-ended");
+  });
   streamDock.setKeyStateListener(({ keyId, isPressed }) => {
     if (!isPressed) {
       return;
@@ -174,6 +228,7 @@ app.on("ready", () => {
 });
 
 app.on("window-all-closed", () => {
+  stopDevicePresenceMonitoring();
   streamDock.disconnect();
   if (process.platform !== "darwin") {
     app.quit();

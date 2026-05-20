@@ -5,3 +5,8 @@ export type StreamDockConnectionInfo = {
   keySize: number;
   productName: string;
 };
+
+export type StreamDockDevicePresence = {
+  isAttached: boolean;
+  productName?: string;
+};

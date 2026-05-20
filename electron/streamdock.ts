@@ -1,5 +1,6 @@
 import HID from "node-hid";
 import sharp from "sharp";
+import type { StreamDockDevicePresence } from "./streamdock-types.js";
 import {
   buildGifFrames,
   DEFAULT_KEY_IMAGE_TRANSFORM,
@@ -8,6 +9,8 @@ import {
   processKeyImageToJpeg,
   type KeyImageTransform,
 } from "./key-image.js";
+
+export type { StreamDockDevicePresence };
 
 export type { KeyImageTransform };
 
@@ -222,6 +225,24 @@ type KeyStateListener = (payload: {
   isPressed: boolean;
 }) => void;
 
+export const detectStreamDockPresence = (): StreamDockDevicePresence => {
+  const discoveredDevice = HID.devices().find(isSupportedStreamDock);
+  if (!discoveredDevice) {
+    return { isAttached: false };
+  }
+
+  const supported = SUPPORTED_DEVICES.find(
+    (entry) =>
+      entry.vendorId === discoveredDevice.vendorId &&
+      entry.productId === discoveredDevice.productId,
+  );
+
+  return {
+    isAttached: true,
+    productName: supported?.productName ?? discoveredDevice.product,
+  };
+};
+
 const toConnectionInfo = (
   device: SupportedDevice,
 ): StreamDockConnectionInfo => ({
@@ -238,6 +259,7 @@ export class MiraboxStreamDock {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private animationTimers = new Map<number, NodeJS.Timeout>();
   private keyStateListener: KeyStateListener | null = null;
+  private sessionLostListener: (() => void) | null = null;
   private readonly handleDeviceData = (data: Buffer) => {
     const keyId = this.decodeKeyId(data);
     if (keyId === null) {
@@ -247,6 +269,7 @@ export class MiraboxStreamDock {
     this.keyStateListener?.({ keyId, isPressed: data[10] === 1 });
   };
   private readonly handleDeviceError = () => {
+    this.sessionLostListener?.();
     this.disconnect();
   };
 
@@ -296,6 +319,7 @@ export class MiraboxStreamDock {
         this.device.on("data", this.handleDeviceData);
         this.device.on("error", this.handleDeviceError);
         this.setBrightness(100);
+        this.clearScreen();
         this.startHeartbeat();
         return toConnectionInfo(supported);
       } catch (error) {
@@ -329,6 +353,15 @@ export class MiraboxStreamDock {
 
   setKeyStateListener(listener: KeyStateListener | null): void {
     this.keyStateListener = listener;
+  }
+
+  setSessionLostListener(listener: (() => void) | null): void {
+    this.sessionLostListener = listener;
+  }
+
+  clearScreen(): void {
+    this.sendSimple([0x43, 0x4c, 0x45, 0x00, 0x00, 0x00, 0xff]);
+    this.refresh();
   }
 
   clearKeyImage(keyId: number): void {
