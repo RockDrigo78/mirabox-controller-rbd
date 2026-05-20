@@ -136,10 +136,8 @@ export const KeyEditor = () => {
 
         if (streamDockApi && !isGif) {
           try {
-            previewImageData = await streamDockApi.preprocessKeyImage(
-              rawImageData,
-              nextLabel,
-            );
+            previewImageData =
+              await streamDockApi.preprocessKeyImage(rawImageData);
           } catch (error) {
             console.error(error);
             setUploadError(getErrorMessage(error));
@@ -323,16 +321,19 @@ export const KeyEditor = () => {
             <Box
               sx={{
                 position: "absolute",
-                bottom: 4,
-                left: 4,
-                right: 4,
+                bottom: 0,
+                left: 0,
+                right: 0,
                 zIndex: 2,
                 fontSize: "11px",
                 color: "#fff",
-                background: "rgba(0, 0, 0, 0.65)",
-                p: 0.5,
-                borderRadius: 0.5,
+                background:
+                  "linear-gradient(to top, rgba(0, 0, 0, 0.62) 0%, rgba(0, 0, 0, 0.28) 45%, transparent 100%)",
+                pt: 3,
+                pb: 1,
+                px: 1,
                 textAlign: "center",
+                textShadow: "0 1px 2px rgba(0,0,0,0.85)",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",

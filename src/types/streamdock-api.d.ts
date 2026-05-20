@@ -22,7 +22,7 @@ type StreamDockApi = {
   connect: () => Promise<StreamDockConnectionInfo>;
   disconnect: () => Promise<void>;
   setBrightness: (value: number) => Promise<void>;
-  preprocessKeyImage: (dataUrl: string, label?: string) => Promise<string>;
+  preprocessKeyImage: (dataUrl: string) => Promise<string>;
   setKeyImage: (
     keyId: number,
     dataUrl: string,

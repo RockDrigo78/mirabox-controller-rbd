@@ -378,14 +378,10 @@ export class MiraboxStreamDock {
     return this.deviceInfo?.keyImage ?? DEFAULT_KEY_IMAGE_TRANSFORM;
   }
 
-  async preprocessKeyImageDataUrl(
-    sourceDataUrl: string,
-    label?: string,
-  ): Promise<string> {
+  async preprocessKeyImageDataUrl(sourceDataUrl: string): Promise<string> {
     return processKeyImageDataUrl(
       sourceDataUrl,
       this.getKeyImageTransform(),
-      label,
     );
   }
 

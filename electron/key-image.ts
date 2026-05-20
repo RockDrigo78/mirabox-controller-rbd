@@ -41,6 +41,42 @@ const getDeviceLabelEdge = (
   }
 };
 
+const buildLabelFadeGradient = (edge: LabelEdge): string => {
+  const stops = `
+    <stop offset="0%" stop-color="#000000" stop-opacity="0.62"/>
+    <stop offset="45%" stop-color="#000000" stop-opacity="0.28"/>
+    <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+  `;
+
+  switch (edge) {
+    case "bottom":
+      return `<linearGradient id="labelFade" x1="0" y1="1" x2="0" y2="0">${stops}</linearGradient>`;
+    case "top":
+      return `<linearGradient id="labelFade" x1="0" y1="0" x2="0" y2="1">${stops}</linearGradient>`;
+    case "right":
+      return `<linearGradient id="labelFade" x1="1" y1="0" x2="0" y2="0">${stops}</linearGradient>`;
+    case "left":
+      return `<linearGradient id="labelFade" x1="0" y1="0" x2="1" y2="0">${stops}</linearGradient>`;
+  }
+};
+
+const buildLabelFadeRect = (
+  edge: LabelEdge,
+  keySize: number,
+  fadeHeight: number,
+): string => {
+  switch (edge) {
+    case "bottom":
+      return `<rect x="0" y="${keySize - fadeHeight}" width="${keySize}" height="${fadeHeight}" fill="url(#labelFade)"/>`;
+    case "top":
+      return `<rect x="0" y="0" width="${keySize}" height="${fadeHeight}" fill="url(#labelFade)"/>`;
+    case "right":
+      return `<rect x="${keySize - fadeHeight}" y="0" width="${fadeHeight}" height="${keySize}" fill="url(#labelFade)"/>`;
+    case "left":
+      return `<rect x="0" y="0" width="${fadeHeight}" height="${keySize}" fill="url(#labelFade)"/>`;
+  }
+};
+
 export const buildKeyLabelSvg = (
   label: string,
   keySize: number,
@@ -48,25 +84,30 @@ export const buildKeyLabelSvg = (
 ): Buffer => {
   const displayLabel = truncateLabel(label);
   const fontSize = Math.max(11, Math.floor(keySize * 0.18));
-  const barThickness = fontSize + 10;
+  const fadeHeight = Math.max(Math.floor(keySize * 0.46), fontSize + 16);
   const edge = getDeviceLabelEdge(rotation);
   const center = keySize / 2;
   const font = `font-family="Segoe UI, Arial, sans-serif" font-size="${fontSize}" font-weight="600" fill="#ffffff"`;
+  const textShadow = `filter="drop-shadow(0 1px 2px rgba(0,0,0,0.85))"`;
+  const defs = `<defs>${buildLabelFadeGradient(edge)}</defs>`;
+  const fadeRect = buildLabelFadeRect(edge, keySize, fadeHeight);
 
   switch (edge) {
     case "top":
       return Buffer.from(
         `<svg width="${keySize}" height="${keySize}" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0" y="0" width="${keySize}" height="${barThickness}" fill="rgba(0,0,0,0.72)"/>
-          <text x="${center}" y="${fontSize + 4}" ${font} text-anchor="middle">${escapeXml(displayLabel)}</text>
+          ${defs}
+          ${fadeRect}
+          <text x="${center}" y="${fontSize + 4}" ${font} ${textShadow} text-anchor="middle">${escapeXml(displayLabel)}</text>
         </svg>`,
       );
     case "right": {
       const anchorX = keySize - 6;
       return Buffer.from(
         `<svg width="${keySize}" height="${keySize}" xmlns="http://www.w3.org/2000/svg">
-          <rect x="${keySize - barThickness}" y="0" width="${barThickness}" height="${keySize}" fill="rgba(0,0,0,0.72)"/>
-          <text x="${anchorX}" y="${center}" transform="rotate(-90 ${anchorX} ${center})" ${font} text-anchor="middle">${escapeXml(displayLabel)}</text>
+          ${defs}
+          ${fadeRect}
+          <text x="${anchorX}" y="${center}" transform="rotate(-90 ${anchorX} ${center})" ${font} ${textShadow} text-anchor="middle">${escapeXml(displayLabel)}</text>
         </svg>`,
       );
     }
@@ -74,8 +115,9 @@ export const buildKeyLabelSvg = (
       const anchorX = 6;
       return Buffer.from(
         `<svg width="${keySize}" height="${keySize}" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0" y="0" width="${barThickness}" height="${keySize}" fill="rgba(0,0,0,0.72)"/>
-          <text x="${anchorX}" y="${center}" transform="rotate(90 ${anchorX} ${center})" ${font} text-anchor="middle">${escapeXml(displayLabel)}</text>
+          ${defs}
+          ${fadeRect}
+          <text x="${anchorX}" y="${center}" transform="rotate(90 ${anchorX} ${center})" ${font} ${textShadow} text-anchor="middle">${escapeXml(displayLabel)}</text>
         </svg>`,
       );
     }
@@ -84,8 +126,9 @@ export const buildKeyLabelSvg = (
       const textY = keySize - 6;
       return Buffer.from(
         `<svg width="${keySize}" height="${keySize}" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0" y="${keySize - barThickness}" width="${keySize}" height="${barThickness}" fill="rgba(0,0,0,0.72)"/>
-          <text x="${center}" y="${textY}" ${font} text-anchor="middle">${escapeXml(displayLabel)}</text>
+          ${defs}
+          ${fadeRect}
+          <text x="${center}" y="${textY}" ${font} ${textShadow} text-anchor="middle">${escapeXml(displayLabel)}</text>
         </svg>`,
       );
     }
@@ -235,18 +278,17 @@ export const buildLabelOnlyKeyJpeg = async (
 export const processKeyImageDataUrl = async (
   sourceDataUrl: string,
   keyImage: KeyImageTransform,
-  label?: string,
 ): Promise<string> => {
   const source = parseImageDataUrl(sourceDataUrl);
   const metadata = await sharp(source, { animated: true }).metadata();
   const isAnimatedGif = (metadata.pages ?? 1) > 1 && metadata.format === "gif";
 
-  const jpeg = await processKeyImageToJpeg(
-    source,
-    keyImage,
-    isAnimatedGif ? 0 : undefined,
-    label,
-  );
+  const jpeg = await buildPreviewKeyPipeline(
+    openImagePipeline(source, isAnimatedGif ? 0 : undefined),
+    keyImage.keySize,
+  )
+    .jpeg({ quality: 90, chromaSubsampling: "4:2:0" })
+    .toBuffer();
 
   return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
 };
