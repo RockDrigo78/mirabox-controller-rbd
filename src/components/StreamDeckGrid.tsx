@@ -307,7 +307,7 @@ export const StreamDeckGrid = () => {
             sx={{
               display: "flex",
               flexDirection: "column",
-              gap: "6px",
+              gap: "30px",
               flexShrink: 0,
               justifyContent: "center",
               p: "8px",
