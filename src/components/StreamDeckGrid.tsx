@@ -12,6 +12,7 @@ import {
   DialogTitle,
   IconButton,
   Paper,
+  Slider,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -22,7 +23,13 @@ import {
   NavigateBefore as NavigateBeforeIcon,
   NavigateNext as NavigateNextIcon,
 } from "@mui/icons-material";
-import { useRef, useState, type ChangeEvent, type MouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type MouseEvent,
+} from "react";
 
 const ACCEPTED_IMAGE_TYPES = new Set([
   "image/png",
@@ -61,6 +68,7 @@ export const StreamDeckGrid = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [sideDisplayImageSlotIdToDelete, setSideDisplayImageSlotIdToDelete] =
     useState<number | null>(null);
+  const [brightness, setBrightness] = useState(100);
   const sideDisplayFileInputRef = useRef<HTMLInputElement>(null);
   const selectedSideDisplaySlotIdRef = useRef<number | null>(null);
   const hasMultiplePages = state.pages.length > 1;
@@ -73,6 +81,14 @@ export const StreamDeckGrid = () => {
         state.pages.length,
       )
     : [];
+
+  useEffect(() => {
+    if (!state.isConnected) {
+      return;
+    }
+
+    void window.streamDockApi?.setBrightness(brightness);
+  }, [brightness, state.isConnected]);
 
   const handleConfirmDeletePage = () => {
     deleteCurrentPage();
@@ -141,6 +157,17 @@ export const StreamDeckGrid = () => {
     }
 
     setSideDisplayMode(mode);
+  };
+
+  const handleBrightnessChange = (_event: Event, value: number | number[]) => {
+    const nextBrightness = Array.isArray(value) ? value[0] : value;
+    setBrightness(nextBrightness);
+
+    if (!state.isConnected) {
+      return;
+    }
+
+    void window.streamDockApi?.setBrightness(nextBrightness);
   };
 
   return (
@@ -434,6 +461,30 @@ export const StreamDeckGrid = () => {
               Show Images
             </ToggleButton>
           </ToggleButtonGroup>
+        </Box>
+
+        <Box
+          sx={{
+            width: "658px",
+            display: "flex",
+            gap: 2,
+            alignItems: "center",
+          }}
+        >
+          <Typography sx={{ minWidth: 142 }}>Device brightness:</Typography>
+          <Slider
+            min={0}
+            max={100}
+            step={1}
+            value={brightness}
+            onChange={handleBrightnessChange}
+            valueLabelDisplay="auto"
+            disabled={!state.isConnected}
+            aria-label="Device brightness"
+            sx={{ maxWidth: 320 }}
+            size="small"
+          />
+          <Typography sx={{ minWidth: 44 }}>{brightness}%</Typography>
         </Box>
       </Box>
 
