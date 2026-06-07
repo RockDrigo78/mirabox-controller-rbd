@@ -17,7 +17,7 @@ import {
   UsbOff as UsbOffIcon,
 } from "@mui/icons-material";
 
-const appLogoSource = "/assets/Controller-logo-02.png";
+const appLogoSource = `${import.meta.env.BASE_URL}assets/Controller-logo-02.png`;
 
 type StreamDockDevicePresence = {
   isAttached: boolean;
