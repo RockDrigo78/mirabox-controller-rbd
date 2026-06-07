@@ -3,6 +3,7 @@ export type StreamDockConnectionInfo = {
   productId: number;
   packetSize: number;
   keySize: number;
+  sideDisplayKeyCount: number;
   productName: string;
 };
 

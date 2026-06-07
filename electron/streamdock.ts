@@ -24,12 +24,19 @@ type SupportedDevice = {
   productName: string;
   keyImage: KeyImageTransform;
   hardwareKeyIds: readonly number[];
+  sideDisplayImage?: KeyImageTransform;
+  sideDisplayHardwareKeyIds?: readonly number[];
 };
+
+const INTERACTIVE_KEY_COUNT = 15;
+const SIDE_DISPLAY_KEY_ID_OFFSET = INTERACTIVE_KEY_COUNT;
 
 const HARDWARE_KEY_IDS_293S = [
   0x0d, 0x0a, 0x07, 0x04, 0x01, 0x0e, 0x0b, 0x08, 0x05, 0x02, 0x0f, 0x0c, 0x09,
   0x06, 0x03,
 ] as const;
+
+const SIDE_DISPLAY_HARDWARE_KEY_IDS_293S = [0x12, 0x11, 0x10] as const;
 
 const HARDWARE_KEY_IDS_293V3 = [
   0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x01, 0x02, 0x03,
@@ -50,6 +57,8 @@ const SUPPORTED_DEVICES: SupportedDevice[] = [
     productName: "Stream Dock 293S",
     keyImage: { keySize: 100, rotation: 90 },
     hardwareKeyIds: HARDWARE_KEY_IDS_293S,
+    sideDisplayImage: { keySize: 80, rotation: 90 },
+    sideDisplayHardwareKeyIds: SIDE_DISPLAY_HARDWARE_KEY_IDS_293S,
   },
   {
     vendorId: 0x6603,
@@ -59,6 +68,8 @@ const SUPPORTED_DEVICES: SupportedDevice[] = [
     productName: "Stream Dock 293S V3",
     keyImage: { keySize: 100, rotation: 90 },
     hardwareKeyIds: HARDWARE_KEY_IDS_293S,
+    sideDisplayImage: { keySize: 80, rotation: 90 },
+    sideDisplayHardwareKeyIds: SIDE_DISPLAY_HARDWARE_KEY_IDS_293S,
   },
   {
     vendorId: 0x6602,
@@ -68,6 +79,8 @@ const SUPPORTED_DEVICES: SupportedDevice[] = [
     productName: "Stream Dock 293S V3",
     keyImage: { keySize: 100, rotation: 90 },
     hardwareKeyIds: HARDWARE_KEY_IDS_293S,
+    sideDisplayImage: { keySize: 80, rotation: 90 },
+    sideDisplayHardwareKeyIds: SIDE_DISPLAY_HARDWARE_KEY_IDS_293S,
   },
   {
     vendorId: 0x6603,
@@ -252,6 +265,7 @@ const toConnectionInfo = (
   productId: device.productId,
   packetSize: device.imagePacketSize,
   keySize: device.keyImage.keySize,
+  sideDisplayKeyCount: device.sideDisplayHardwareKeyIds?.length ?? 0,
   productName: device.productName,
 });
 
@@ -373,7 +387,7 @@ export class MiraboxStreamDock {
       this.assertKeyId(keyId);
       this.stopAnimation(keyId);
 
-      const keyImage = this.getKeyImageTransform();
+      const keyImage = this.getKeyImageTransform(keyId);
       const blackFrame = await buildSolidBlackKeyJpeg(keyImage);
       await this.sendKeyFrame(keyId, blackFrame);
 
@@ -383,7 +397,11 @@ export class MiraboxStreamDock {
     });
   }
 
-  getKeyImageTransform(): KeyImageTransform {
+  getKeyImageTransform(keyId?: number): KeyImageTransform {
+    if (keyId !== undefined && this.isSideDisplayKeyId(keyId)) {
+      return this.deviceInfo?.sideDisplayImage ?? DEFAULT_KEY_IMAGE_TRANSFORM;
+    }
+
     return this.deviceInfo?.keyImage ?? DEFAULT_KEY_IMAGE_TRANSFORM;
   }
 
@@ -403,7 +421,7 @@ export class MiraboxStreamDock {
       this.assertKeyId(keyId);
       const trimmedLabel = label?.trim();
       const hasImagePayload = payload.trim().length > 0;
-      const keyImage = this.getKeyImageTransform();
+      const keyImage = this.getKeyImageTransform(keyId);
 
       if (!hasImagePayload) {
         if (!trimmedLabel) {
@@ -591,6 +609,18 @@ export class MiraboxStreamDock {
   }
 
   private mapKeyId(keyId: number): number {
+    if (this.isSideDisplayKeyId(keyId)) {
+      const mapped =
+        this.getDeviceInfo().sideDisplayHardwareKeyIds?.[
+          keyId - SIDE_DISPLAY_KEY_ID_OFFSET
+        ];
+      if (mapped === undefined) {
+        throw new Error(`Invalid side display index ${keyId}`);
+      }
+
+      return mapped;
+    }
+
     const mapped = this.getDeviceInfo().hardwareKeyIds[keyId];
     if (mapped === undefined) {
       throw new Error(`Invalid key index ${keyId}`);
@@ -600,9 +630,22 @@ export class MiraboxStreamDock {
   }
 
   private assertKeyId(keyId: number): void {
-    if (!Number.isInteger(keyId) || keyId < 0 || keyId > 14) {
-      throw new Error("Key index must be between 0 and 14");
+    const keyCount =
+      INTERACTIVE_KEY_COUNT +
+      (this.getDeviceInfo().sideDisplayHardwareKeyIds?.length ?? 0);
+
+    if (!Number.isInteger(keyId) || keyId < 0 || keyId >= keyCount) {
+      throw new Error(`Key index must be between 0 and ${keyCount - 1}`);
     }
+  }
+
+  private isSideDisplayKeyId(keyId: number): boolean {
+    const sideDisplayKeyCount =
+      this.deviceInfo?.sideDisplayHardwareKeyIds?.length ?? 0;
+    return (
+      keyId >= SIDE_DISPLAY_KEY_ID_OFFSET &&
+      keyId < SIDE_DISPLAY_KEY_ID_OFFSET + sideDisplayKeyCount
+    );
   }
 
   private decodeKeyId(data: Buffer): number | null {
@@ -610,6 +653,7 @@ export class MiraboxStreamDock {
       return null;
     }
 
-    return this.deviceInfo.hardwareKeyIds.indexOf(data[9]) ?? null;
+    const keyId = this.deviceInfo.hardwareKeyIds.indexOf(data[9]);
+    return keyId >= 0 ? keyId : null;
   }
 }

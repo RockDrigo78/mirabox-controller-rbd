@@ -2,6 +2,12 @@ import type { ReactNode } from "react";
 import { useState, useCallback } from "react";
 import { StreamDeckContext } from "./StreamDeckReactContext";
 import type { StreamDeckKeyAction } from "../types/streamdeck";
+import {
+  createDefaultSideDisplayConfig,
+  normalizeSideDisplayConfig,
+  type SideDisplayConfig,
+  type SideDisplayMode,
+} from "../utils/sideDisplaySlots";
 
 const STORAGE_KEY = "mirabox-controller:key-config:v1";
 const KEY_ROW_COUNT = 3;
@@ -17,6 +23,7 @@ type StoredStreamDeckPage = {
   id: string;
   name: string;
   keys: Record<string, StoredStreamDeckKey>;
+  sideDisplay?: SideDisplayConfig;
 };
 
 type StoredStreamDeckPayload = {
@@ -38,6 +45,7 @@ export interface StreamDeckPage {
   id: string;
   name: string;
   keys: StreamDeckKey[];
+  sideDisplay: SideDisplayConfig;
 }
 
 export interface StreamDeckState {
@@ -57,6 +65,8 @@ export interface StreamDeckContextType {
   getKey: (keyId: number) => StreamDeckKey | undefined;
   addPage: () => void;
   deleteCurrentPage: () => void;
+  setSideDisplayMode: (mode: SideDisplayMode) => void;
+  updateSideDisplayImage: (slotId: number, image: string | undefined) => void;
   goToPreviousPage: () => void;
   goToNextPage: () => void;
 }
@@ -90,6 +100,7 @@ const createPage = (pageNumber: number, id = createPageId()): StreamDeckPage => 
   id,
   name: `Page ${pageNumber}`,
   keys: initializeGrid(),
+  sideDisplay: createDefaultSideDisplayConfig(),
 });
 
 const mergeStoredKeys = (
@@ -132,6 +143,7 @@ const restorePages = (): StreamDeckPage[] => {
         id: page.id,
         name: page.name,
         keys: mergeStoredKeys(initializeGrid(), page.keys),
+        sideDisplay: normalizeSideDisplayConfig(page.sideDisplay),
       }));
 
       return pages.length > 0 ? pages : [createPage(1, "page-1")];
@@ -181,6 +193,7 @@ const persistPages = (pages: StreamDeckPage[], activePageIndex: number) => {
       id: page.id,
       name: page.name,
       keys: toStoredKeys(page.keys),
+      sideDisplay: page.sideDisplay,
     })),
   };
 
@@ -322,6 +335,63 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
+  const setSideDisplayMode = useCallback((mode: SideDisplayMode) => {
+    setState((prev) => {
+      const pages = prev.pages.map((page, pageIndex) => {
+        if (pageIndex !== prev.activePageIndex) {
+          return page;
+        }
+
+        return {
+          ...page,
+          sideDisplay: {
+            ...page.sideDisplay,
+            mode,
+          },
+        };
+      });
+      persistPages(pages, prev.activePageIndex);
+
+      return {
+        ...prev,
+        pages,
+      };
+    });
+  }, []);
+
+  const updateSideDisplayImage = useCallback(
+    (slotId: number, image: string | undefined) => {
+      setState((prev) => {
+        const pages = prev.pages.map((page, pageIndex) => {
+          if (pageIndex !== prev.activePageIndex) {
+            return page;
+          }
+
+          return {
+            ...page,
+            sideDisplay: {
+              ...page.sideDisplay,
+              imageSlots: page.sideDisplay.imageSlots.map((slot) => {
+                if (slot.id !== slotId) {
+                  return slot;
+                }
+
+                return image ? { ...slot, image } : { id: slot.id };
+              }),
+            },
+          };
+        });
+        persistPages(pages, prev.activePageIndex);
+
+        return {
+          ...prev,
+          pages,
+        };
+      });
+    },
+    [],
+  );
+
   const goToPreviousPage = useCallback(() => {
     setState((prev) => {
       const activePageIndex =
@@ -362,6 +432,8 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
     getKey,
     addPage,
     deleteCurrentPage,
+    setSideDisplayMode,
+    updateSideDisplayImage,
     goToPreviousPage,
     goToNextPage,
   };

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useStreamDeck } from "../context/useStreamDeck";
-import type { StreamDeckKey } from "../context/StreamDeckContext";
+import type {
+  StreamDeckKey,
+  StreamDeckPage,
+} from "../context/StreamDeckContext";
+import { getSideDisplaySlots } from "../utils/sideDisplaySlots";
 
 import {
   AppBar,
@@ -49,6 +53,53 @@ const syncKeysToNative = async (
   }
 };
 
+const syncSideDisplaySlotsToNative = async (
+  streamDockApi: NonNullable<typeof window.streamDockApi>,
+  activePage: StreamDeckPage | undefined,
+  activePageIndex: number,
+  pageCount: number,
+  sideDisplayKeyCount: number,
+) => {
+  if (!activePage) {
+    return;
+  }
+
+  const sideDisplaySlots = getSideDisplaySlots(
+    activePage.sideDisplay,
+    activePageIndex,
+    pageCount,
+  ).slice(0, sideDisplayKeyCount);
+
+  for (const slot of sideDisplaySlots) {
+    if (!slot.image && !slot.label?.trim()) {
+      await streamDockApi.clearKeyImage(slot.id);
+      continue;
+    }
+
+    await streamDockApi.setKeyImage(slot.id, slot.image ?? "", slot.label);
+  }
+};
+
+const getDisplaySyncSignature = (
+  activePage: StreamDeckPage | undefined,
+  pageCount: number,
+): string => {
+  if (!activePage) {
+    return `unknown:${pageCount}`;
+  }
+
+  const sideDisplayImages = activePage.sideDisplay.imageSlots
+    .map((slot) => `${slot.id}:${slot.image ?? ""}`)
+    .join(",");
+
+  return [
+    activePage.id,
+    pageCount,
+    activePage.sideDisplay.mode,
+    sideDisplayImages,
+  ].join(":");
+};
+
 export const StatusBar = () => {
   const { state, setConnected, goToPreviousPage, goToNextPage } =
     useStreamDeck();
@@ -57,7 +108,13 @@ export const StatusBar = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [devicePresence, setDevicePresence] =
     useState<StreamDockDevicePresence>({ isAttached: false });
-  const previousSyncedPageIndexRef = useRef(state.activePageIndex);
+  const sideDisplayKeyCountRef = useRef(0);
+  const previousDisplaySyncSignatureRef = useRef(
+    getDisplaySyncSignature(
+      state.pages[state.activePageIndex],
+      state.pages.length,
+    ),
+  );
   const hasNativeBridge = Boolean(window.streamDockApi);
 
   useEffect(() => {
@@ -101,12 +158,17 @@ export const StatusBar = () => {
   }, [goToNextPage, goToPreviousPage, setConnected]);
 
   useEffect(() => {
+    const displaySyncSignature = getDisplaySyncSignature(
+      state.pages[state.activePageIndex],
+      state.pages.length,
+    );
+
     if (!state.isConnected) {
-      previousSyncedPageIndexRef.current = state.activePageIndex;
+      previousDisplaySyncSignatureRef.current = displaySyncSignature;
       return;
     }
 
-    if (previousSyncedPageIndexRef.current === state.activePageIndex) {
+    if (previousDisplaySyncSignatureRef.current === displaySyncSignature) {
       return;
     }
 
@@ -115,12 +177,21 @@ export const StatusBar = () => {
       return;
     }
 
-    previousSyncedPageIndexRef.current = state.activePageIndex;
-    void syncKeysToNative(streamDockApi, state.keys).catch((error: unknown) => {
+    previousDisplaySyncSignatureRef.current = displaySyncSignature;
+    void (async () => {
+      await syncKeysToNative(streamDockApi, state.keys);
+      await syncSideDisplaySlotsToNative(
+        streamDockApi,
+        state.pages[state.activePageIndex],
+        state.activePageIndex,
+        state.pages.length,
+        sideDisplayKeyCountRef.current,
+      );
+    })().catch((error: unknown) => {
       console.error(error);
       setActionError("Failed to sync the selected page to the MiraBox.");
     });
-  }, [state.activePageIndex, state.isConnected, state.keys]);
+  }, [state.activePageIndex, state.isConnected, state.keys, state.pages]);
 
   const handleConnect = async () => {
     if (!hasNativeBridge) {
@@ -140,12 +211,24 @@ export const StatusBar = () => {
     try {
       if (state.isConnected) {
         await streamDockApi.disconnect();
+        sideDisplayKeyCountRef.current = 0;
         setConnected(false);
       } else {
-        await streamDockApi.connect();
+        const connectionInfo = await streamDockApi.connect();
+        sideDisplayKeyCountRef.current = connectionInfo.sideDisplayKeyCount;
         setConnected(true);
-        previousSyncedPageIndexRef.current = state.activePageIndex;
+        previousDisplaySyncSignatureRef.current = getDisplaySyncSignature(
+          state.pages[state.activePageIndex],
+          state.pages.length,
+        );
         await syncKeysToNative(streamDockApi, state.keys);
+        await syncSideDisplaySlotsToNative(
+          streamDockApi,
+          state.pages[state.activePageIndex],
+          state.activePageIndex,
+          state.pages.length,
+          connectionInfo.sideDisplayKeyCount,
+        );
       }
     } catch (error) {
       console.error(error);
