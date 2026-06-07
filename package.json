@@ -30,6 +30,7 @@
       "node_modules/sharp/**/*"
     ],
     "win": {
+      "icon": "public/assets/Controller-logo-01.png",
       "target": [
         {
           "target": "portable",

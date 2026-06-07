@@ -72,6 +72,9 @@ const __dirname = path.dirname(__filename);
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const isDev = Boolean(devServerUrl);
+const appIconPath = isDev
+  ? path.join(__dirname, "../../public/assets/Controller-logo-01.png")
+  : path.join(__dirname, "../assets/Controller-logo-01.png");
 
 const splitArguments = (value: string | undefined): string[] => {
   if (!value) {
@@ -191,6 +194,7 @@ const createWindow = () => {
     height: 800,
     minWidth: 900,
     minHeight: 600,
+    icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

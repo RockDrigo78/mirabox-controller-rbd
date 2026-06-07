@@ -4,7 +4,6 @@ import { useStreamDeck } from "../context/useStreamDeck";
 import {
   AppBar,
   Toolbar,
-  Typography,
   Button,
   Box,
   Chip,
@@ -17,6 +16,8 @@ import {
   Usb as UsbIcon,
   UsbOff as UsbOffIcon,
 } from "@mui/icons-material";
+
+const appLogoSource = "/assets/Controller-logo-02.png";
 
 type StreamDockDevicePresence = {
   isAttached: boolean;
@@ -143,11 +144,17 @@ export const StatusBar = () => {
     <>
       <AppBar position="static" elevation={2}>
         <Toolbar>
-          <DevicesIcon sx={{ mr: 2 }} />
-          <Box sx={{ flex: 1, textAlign: "center" }}>
-            <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
-              MiraBox HSV 293S Controller
-            </Typography>
+          <Box sx={{ flex: 1, display: "flex", justifyContent: "center" }}>
+            <Box
+              component="img"
+              src={appLogoSource}
+              alt="MiraBox HSV 293S Controller"
+              sx={{
+                height: 40,
+                maxWidth: "min(360px, 40vw)",
+                objectFit: "contain",
+              }}
+            />
           </Box>
           <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
             {hasNativeBridge ? (
@@ -210,7 +217,7 @@ export const StatusBar = () => {
 
       <Snackbar
         open={connectionError !== null}
-        autoHideDuration={8000}
+        autoHideDuration={6000}
         onClose={() => setConnectionError(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
@@ -225,7 +232,7 @@ export const StatusBar = () => {
 
       <Snackbar
         open={actionError !== null}
-        autoHideDuration={8000}
+        autoHideDuration={6000}
         onClose={() => setActionError(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
