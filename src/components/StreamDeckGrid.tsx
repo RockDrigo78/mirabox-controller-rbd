@@ -10,16 +10,19 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  IconButton,
   Paper,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import {
   Add as AddIcon,
-  Delete as DeleteIcon,
+  DeleteOutlined as DeleteIcon,
   NavigateBefore as NavigateBeforeIcon,
   NavigateNext as NavigateNextIcon,
 } from "@mui/icons-material";
-import { useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent, type MouseEvent } from "react";
 
 const ACCEPTED_IMAGE_TYPES = new Set([
   "image/png",
@@ -56,6 +59,8 @@ export const StreamDeckGrid = () => {
   } = useStreamDeck();
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [sideDisplayImageSlotIdToDelete, setSideDisplayImageSlotIdToDelete] =
+    useState<number | null>(null);
   const sideDisplayFileInputRef = useRef<HTMLInputElement>(null);
   const selectedSideDisplaySlotIdRef = useRef<number | null>(null);
   const hasMultiplePages = state.pages.length > 1;
@@ -104,6 +109,38 @@ export const StreamDeckGrid = () => {
       updateSideDisplayImage(slotId, imageData);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleDeleteSideDisplayImage = (
+    event: MouseEvent<HTMLButtonElement>,
+    slotId: number,
+  ) => {
+    event.stopPropagation();
+    setSideDisplayImageSlotIdToDelete(slotId);
+  };
+
+  const closeSideDisplayDeleteDialog = () => {
+    setSideDisplayImageSlotIdToDelete(null);
+  };
+
+  const handleConfirmDeleteSideDisplayImage = () => {
+    if (sideDisplayImageSlotIdToDelete === null) {
+      return;
+    }
+
+    updateSideDisplayImage(sideDisplayImageSlotIdToDelete, undefined);
+    closeSideDisplayDeleteDialog();
+  };
+
+  const handleSideDisplayModeChange = (
+    _event: MouseEvent<HTMLElement>,
+    mode: "page-info" | "custom-images" | null,
+  ) => {
+    if (!mode) {
+      return;
+    }
+
+    setSideDisplayMode(mode);
   };
 
   return (
@@ -308,17 +345,52 @@ export const StreamDeckGrid = () => {
                         borderColor: "#58a6ff",
                         boxShadow:
                           "inset 0 0 10px rgba(0, 0, 0, 0.85), 0 0 10px rgba(88, 166, 255, 0.35)",
+                        "& .side-display-delete-button": {
+                          opacity: 1,
+                          pointerEvents: "auto",
+                        },
                       }
                     : undefined,
                 }}
               >
                 {slot.image ? (
-                  <Box
-                    component="img"
-                    src={slot.image}
-                    alt={`Side display ${slot.id - 14}`}
-                    sx={keyImageSx}
-                  />
+                  <>
+                    <Box
+                      component="img"
+                      src={slot.image}
+                      alt={`Side display ${slot.id - 14}`}
+                      sx={keyImageSx}
+                    />
+                    {isCustomSideDisplay ? (
+                      <IconButton
+                        size="small"
+                        color="error"
+                        aria-label={`Delete side display ${slot.id - 14} image`}
+                        onClick={(event) =>
+                          handleDeleteSideDisplayImage(event, slot.id)
+                        }
+                        sx={{
+                          position: "absolute",
+                          top: 3,
+                          right: 3,
+                          zIndex: 3,
+                          width: 24,
+                          height: 24,
+                          opacity: 0,
+                          pointerEvents: "none",
+                          transition: "opacity 0.15s ease",
+                          bgcolor: "rgba(0, 0, 0, 0.72)",
+                          "&:hover": {
+                            bgcolor: "rgba(218, 54, 51, 0.88)",
+                            color: "#ffffff",
+                          },
+                        }}
+                        className="side-display-delete-button"
+                      >
+                        <DeleteIcon color="action" fontSize="inherit" />
+                      </IconButton>
+                    ) : null}
+                  </>
                 ) : (
                   <KeyLabelDisplay
                     label={slot.label ?? "Upload"}
@@ -339,20 +411,29 @@ export const StreamDeckGrid = () => {
           }}
         >
           <Typography>Side Display options:</Typography>
-          <Button
+          <ToggleButtonGroup
+            exclusive
             size="small"
-            variant={isCustomSideDisplay ? "outlined" : "contained"}
-            onClick={() => setSideDisplayMode("page-info")}
+            value={activePage?.sideDisplay.mode ?? "page-info"}
+            onChange={handleSideDisplayModeChange}
+            aria-label="Side display mode"
+            sx={{
+              "& .Mui-selected": {
+                cursor: "default",
+                pointerEvents: "none",
+              },
+              "& .Mui-selected:hover": {
+                backgroundColor: "primary.main",
+              },
+            }}
           >
-            Show Page Info
-          </Button>
-          <Button
-            size="small"
-            variant={isCustomSideDisplay ? "contained" : "outlined"}
-            onClick={() => setSideDisplayMode("custom-images")}
-          >
-            Show Images
-          </Button>
+            <ToggleButton value="page-info" aria-label="Show page information">
+              Show Page Info
+            </ToggleButton>
+            <ToggleButton value="custom-images" aria-label="Show images">
+              Show Images
+            </ToggleButton>
+          </ToggleButtonGroup>
         </Box>
       </Box>
 
@@ -375,6 +456,28 @@ export const StreamDeckGrid = () => {
             onClick={handleConfirmDeletePage}
           >
             Delete Page
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={sideDisplayImageSlotIdToDelete !== null}
+        onClose={closeSideDisplayDeleteDialog}
+      >
+        <DialogTitle>Delete Side Display Image?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will remove the uploaded image from this side display slot.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeSideDisplayDeleteDialog}>Cancel</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleConfirmDeleteSideDisplayImage}
+          >
+            Delete Image
           </Button>
         </DialogActions>
       </Dialog>
