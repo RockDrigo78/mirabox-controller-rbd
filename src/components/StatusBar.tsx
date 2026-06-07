@@ -17,7 +17,7 @@ import {
   UsbOff as UsbOffIcon,
 } from "@mui/icons-material";
 
-const appLogoSource = `${import.meta.env.BASE_URL}assets/Controller-logo-02.png`;
+const appLogoSource = `${import.meta.env.BASE_URL}assets/Controller-logo-03.png`;
 
 type StreamDockDevicePresence = {
   isAttached: boolean;
@@ -49,9 +49,8 @@ export const StatusBar = () => {
 
     void streamDockApi.getDevicePresence().then(setDevicePresence);
 
-    const unsubscribePresence = streamDockApi.onDevicePresenceChanged(
-      setDevicePresence,
-    );
+    const unsubscribePresence =
+      streamDockApi.onDevicePresenceChanged(setDevicePresence);
     const unsubscribeSessionEnded = streamDockApi.onSessionEnded(() => {
       setConnected(false);
       setConnectionError(
@@ -112,11 +111,7 @@ export const StatusBar = () => {
           }
 
           try {
-            await streamDockApi.setKeyImage(
-              key.id,
-              key.image ?? "",
-              key.label,
-            );
+            await streamDockApi.setKeyImage(key.id, key.image ?? "", key.label);
           } catch (syncError) {
             console.error(`Failed to sync key ${key.id + 1}`, syncError);
             setConnectionError(
@@ -143,20 +138,36 @@ export const StatusBar = () => {
   return (
     <>
       <AppBar position="static" elevation={2}>
-        <Toolbar>
-          <Box sx={{ flex: 1, display: "flex", justifyContent: "center" }}>
+        <Toolbar sx={{ minHeight: 88, py: 1 }}>
+          <Box
+            sx={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              minWidth: 0,
+            }}
+          >
             <Box
               component="img"
               src={appLogoSource}
               alt="MiraBox HSV 293S Controller"
               sx={{
-                height: 40,
-                maxWidth: "min(360px, 40vw)",
+                height: 64,
+                maxWidth: "min(420px, 45vw)",
+                borderRadius: 1,
                 objectFit: "contain",
               }}
             />
           </Box>
-          <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+          <Box
+            sx={{
+              display: "flex",
+              gap: 2,
+              alignItems: "center",
+              justifyContent: "flex-end",
+              flexWrap: "wrap",
+            }}
+          >
             {hasNativeBridge ? (
               <Chip
                 icon={devicePresence.isAttached ? <UsbIcon /> : <UsbOffIcon />}
