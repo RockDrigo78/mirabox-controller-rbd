@@ -47,7 +47,14 @@ const isWindows =
   typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");
 
 export const KeyEditor = () => {
-  const { state, getKey, updateKey, clearKeyImageState } = useStreamDeck();
+  const {
+    state,
+    getKey,
+    updateKey,
+    clearKeyImageState,
+    goToPreviousPage,
+    goToNextPage,
+  } = useStreamDeck();
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -309,6 +316,16 @@ export const KeyEditor = () => {
       return;
     }
 
+    if (action.type === "previous-page") {
+      goToPreviousPage();
+      return;
+    }
+
+    if (action.type === "next-page") {
+      goToNextPage();
+      return;
+    }
+
     const streamDockApi = window.streamDockApi;
     if (!streamDockApi) {
       setActionMessage("Action testing is only available in the Electron app.");
@@ -478,6 +495,8 @@ export const KeyEditor = () => {
               <MenuItem value="launch-app">Launch application</MenuItem>
               <MenuItem value="open-url">Open URL</MenuItem>
               <MenuItem value="shell-command">Run shell command</MenuItem>
+              <MenuItem value="previous-page">Previous page</MenuItem>
+              <MenuItem value="next-page">Next page</MenuItem>
             </Select>
           </FormControl>
 

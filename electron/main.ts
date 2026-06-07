@@ -11,7 +11,13 @@ import {
 import type { StreamDockDevicePresence } from "./streamdock-types.js";
 
 type StreamDeckKeyAction = {
-  type: "none" | "open-url" | "launch-app" | "shell-command";
+  type:
+    | "none"
+    | "open-url"
+    | "launch-app"
+    | "shell-command"
+    | "previous-page"
+    | "next-page";
   label?: string;
   url?: string;
   path?: string;
@@ -87,6 +93,16 @@ const splitArguments = (value: string | undefined): string[] => {
 
 const executeKeyAction = async (action: StreamDeckKeyAction | undefined) => {
   if (!action || action.type === "none") {
+    return;
+  }
+
+  if (action.type === "previous-page") {
+    mainWindow?.webContents.send("streamdock:page-navigation", "previous");
+    return;
+  }
+
+  if (action.type === "next-page") {
+    mainWindow?.webContents.send("streamdock:page-navigation", "next");
     return;
   }
 

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStreamDeck } from "../context/useStreamDeck";
+import type { StreamDeckKey } from "../context/StreamDeckContext";
 
 import {
   AppBar,
@@ -32,13 +33,31 @@ const getErrorMessage = (error: unknown): string => {
   return "Failed to connect to the Stream Deck.";
 };
 
+const syncKeysToNative = async (
+  streamDockApi: NonNullable<typeof window.streamDockApi>,
+  keys: StreamDeckKey[],
+) => {
+  for (const key of keys) {
+    await streamDockApi.setKeyAction(key.id, key.action);
+
+    if (!key.image && !key.label?.trim()) {
+      await streamDockApi.clearKeyImage(key.id);
+      continue;
+    }
+
+    await streamDockApi.setKeyImage(key.id, key.image ?? "", key.label);
+  }
+};
+
 export const StatusBar = () => {
-  const { state, setConnected } = useStreamDeck();
+  const { state, setConnected, goToPreviousPage, goToNextPage } =
+    useStreamDeck();
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [devicePresence, setDevicePresence] =
     useState<StreamDockDevicePresence>({ isAttached: false });
+  const previousSyncedPageIndexRef = useRef(state.activePageIndex);
   const hasNativeBridge = Boolean(window.streamDockApi);
 
   useEffect(() => {
@@ -62,13 +81,46 @@ export const StatusBar = () => {
         setActionError(message);
       },
     );
+    const unsubscribePageNavigation = streamDockApi.onPageNavigation(
+      (direction) => {
+        if (direction === "previous") {
+          goToPreviousPage();
+          return;
+        }
+
+        goToNextPage();
+      },
+    );
 
     return () => {
       unsubscribePresence();
       unsubscribeSessionEnded();
       unsubscribeKeyActionError();
+      unsubscribePageNavigation();
     };
-  }, [setConnected]);
+  }, [goToNextPage, goToPreviousPage, setConnected]);
+
+  useEffect(() => {
+    if (!state.isConnected) {
+      previousSyncedPageIndexRef.current = state.activePageIndex;
+      return;
+    }
+
+    if (previousSyncedPageIndexRef.current === state.activePageIndex) {
+      return;
+    }
+
+    const streamDockApi = window.streamDockApi;
+    if (!streamDockApi) {
+      return;
+    }
+
+    previousSyncedPageIndexRef.current = state.activePageIndex;
+    void syncKeysToNative(streamDockApi, state.keys).catch((error: unknown) => {
+      console.error(error);
+      setActionError("Failed to sync the selected page to the MiraBox.");
+    });
+  }, [state.activePageIndex, state.isConnected, state.keys]);
 
   const handleConnect = async () => {
     if (!hasNativeBridge) {
@@ -92,33 +144,8 @@ export const StatusBar = () => {
       } else {
         await streamDockApi.connect();
         setConnected(true);
-
-        for (const key of state.keys) {
-          try {
-            await streamDockApi.setKeyAction(key.id, key.action);
-          } catch (syncError) {
-            console.error(
-              `Failed to sync action for key ${key.id + 1}`,
-              syncError,
-            );
-            setConnectionError(
-              `Connected, but key ${key.id + 1} action failed to sync. Re-save the action and reconnect.`,
-            );
-          }
-
-          if (!key.image && !key.label) {
-            continue;
-          }
-
-          try {
-            await streamDockApi.setKeyImage(key.id, key.image ?? "", key.label);
-          } catch (syncError) {
-            console.error(`Failed to sync key ${key.id + 1}`, syncError);
-            setConnectionError(
-              `Connected, but key ${key.id + 1} failed to upload. Re-select the key and upload again.`,
-            );
-          }
-        }
+        previousSyncedPageIndexRef.current = state.activePageIndex;
+        await syncKeysToNative(streamDockApi, state.keys);
       }
     } catch (error) {
       console.error(error);

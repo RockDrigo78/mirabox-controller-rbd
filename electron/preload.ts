@@ -5,7 +5,13 @@ import type {
 } from "./streamdock-types.js";
 
 type StreamDeckKeyAction = {
-  type: "none" | "open-url" | "launch-app" | "shell-command";
+  type:
+    | "none"
+    | "open-url"
+    | "launch-app"
+    | "shell-command"
+    | "previous-page"
+    | "next-page";
   label?: string;
   url?: string;
   path?: string;
@@ -32,6 +38,7 @@ export type StreamDockApi = {
   clearKeyImage: (keyId: number) => Promise<void>;
   setKeyAction: (keyId: number, action?: StreamDeckKeyAction) => Promise<void>;
   executeKeyAction: (action?: StreamDeckKeyAction) => Promise<void>;
+  onPageNavigation: (listener: (direction: "previous" | "next") => void) => () => void;
   onKeyActionError: (listener: (message: string) => void) => () => void;
 };
 
@@ -73,6 +80,18 @@ const api: StreamDockApi = {
     ipcRenderer.invoke("streamdock:setKeyAction", { keyId, action }),
   executeKeyAction: (action) =>
     ipcRenderer.invoke("streamdock:executeKeyAction", action),
+  onPageNavigation: (listener) => {
+    const subscription = (
+      _event: Electron.IpcRendererEvent,
+      direction: "previous" | "next",
+    ) => {
+      listener(direction);
+    };
+    ipcRenderer.on("streamdock:page-navigation", subscription);
+    return () => {
+      ipcRenderer.off("streamdock:page-navigation", subscription);
+    };
+  },
   onKeyActionError: (listener) => {
     const subscription = (
       _event: Electron.IpcRendererEvent,

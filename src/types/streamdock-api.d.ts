@@ -31,6 +31,9 @@ type StreamDockApi = {
   clearKeyImage: (keyId: number) => Promise<void>;
   setKeyAction: (keyId: number, action?: StreamDeckKeyAction) => Promise<void>;
   executeKeyAction: (action?: StreamDeckKeyAction) => Promise<void>;
+  onPageNavigation: (
+    listener: (direction: "previous" | "next") => void,
+  ) => () => void;
   onKeyActionError: (listener: (message: string) => void) => () => void;
 };
 

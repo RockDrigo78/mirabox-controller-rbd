@@ -2,7 +2,9 @@ export type StreamDeckKeyActionType =
   | "none"
   | "open-url"
   | "launch-app"
-  | "shell-command";
+  | "shell-command"
+  | "previous-page"
+  | "next-page";
 
 export interface StreamDeckKeyAction {
   type: StreamDeckKeyActionType;
