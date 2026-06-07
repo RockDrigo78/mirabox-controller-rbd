@@ -4,7 +4,7 @@ import { KeyLabelDisplay } from "./KeyLabelDisplay";
 import { Box, Paper, Typography } from "@mui/material";
 import { useState } from "react";
 
-const KEY_CELL_SIZE_PX = 88;
+const KEY_CELL_SIZE_PX = 100;
 const KEY_GRID_GAP_PX = 10;
 const KEY_ROW_COUNT = 3;
 const KEY_COLUMN_COUNT = 5;

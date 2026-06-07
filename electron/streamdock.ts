@@ -48,7 +48,7 @@ const SUPPORTED_DEVICES: SupportedDevice[] = [
     commandPacketSize: 512,
     imagePacketSize: 512,
     productName: "Stream Dock 293S",
-    keyImage: { keySize: 96, rotation: 90 },
+    keyImage: { keySize: 100, rotation: 90 },
     hardwareKeyIds: HARDWARE_KEY_IDS_293S,
   },
   {
@@ -57,7 +57,7 @@ const SUPPORTED_DEVICES: SupportedDevice[] = [
     commandPacketSize: 512,
     imagePacketSize: 1024,
     productName: "Stream Dock 293S V3",
-    keyImage: { keySize: 96, rotation: 90 },
+    keyImage: { keySize: 100, rotation: 90 },
     hardwareKeyIds: HARDWARE_KEY_IDS_293S,
   },
   {
@@ -66,7 +66,7 @@ const SUPPORTED_DEVICES: SupportedDevice[] = [
     commandPacketSize: 512,
     imagePacketSize: 1024,
     productName: "Stream Dock 293S V3",
-    keyImage: { keySize: 96, rotation: 90 },
+    keyImage: { keySize: 100, rotation: 90 },
     hardwareKeyIds: HARDWARE_KEY_IDS_293S,
   },
   {

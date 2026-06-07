@@ -6,7 +6,7 @@ export type KeyImageTransform = {
 };
 
 export const DEFAULT_KEY_IMAGE_TRANSFORM: KeyImageTransform = {
-  keySize: 96,
+  keySize: 100,
   rotation: 90,
 };
 
