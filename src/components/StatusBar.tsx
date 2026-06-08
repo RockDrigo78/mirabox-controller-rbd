@@ -13,11 +13,20 @@ import {
   Box,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  IconButton,
   Snackbar,
   Alert,
+  Switch,
+  Typography,
 } from "@mui/material";
 import {
   Devices as DevicesIcon,
+  Settings as SettingsIcon,
   Usb as UsbIcon,
   UsbOff as UsbOffIcon,
 } from "@mui/icons-material";
@@ -27,6 +36,16 @@ const appLogoSource = `${import.meta.env.BASE_URL}assets/Controller-logo-03.png`
 type StreamDockDevicePresence = {
   isAttached: boolean;
   productName?: string;
+};
+
+type AppSettings = {
+  startWithWindows: boolean;
+  hideToTray: boolean;
+};
+
+const defaultAppSettings: AppSettings = {
+  startWithWindows: false,
+  hideToTray: false,
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -111,6 +130,9 @@ export const StatusBar = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [devicePresence, setDevicePresence] =
     useState<StreamDockDevicePresence>({ isAttached: false });
+  const [appSettings, setAppSettings] =
+    useState<AppSettings>(defaultAppSettings);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const sideDisplayKeyCountRef = useRef(0);
   const userDisconnectedRef = useRef(false);
   const lastAutoConnectPresenceSignatureRef = useRef<string | null>(null);
@@ -181,7 +203,13 @@ export const StatusBar = () => {
     }
 
     void streamDockApi.getDevicePresence().then(setDevicePresence);
+    void streamDockApi.getAppSettings().then(setAppSettings).catch((error) => {
+      console.error(error);
+      setActionError("Failed to load app settings.");
+    });
 
+    const unsubscribeSettingsChanged =
+      streamDockApi.onAppSettingsChanged(setAppSettings);
     const unsubscribePresence =
       streamDockApi.onDevicePresenceChanged(setDevicePresence);
     const unsubscribeSessionEnded = streamDockApi.onSessionEnded(() => {
@@ -207,6 +235,7 @@ export const StatusBar = () => {
     );
 
     return () => {
+      unsubscribeSettingsChanged();
       unsubscribePresence();
       unsubscribeSessionEnded();
       unsubscribeKeyActionError();
@@ -310,6 +339,21 @@ export const StatusBar = () => {
     await connectToDevice();
   };
 
+  const handleUpdateAppSettings = async (updates: Partial<AppSettings>) => {
+    const streamDockApi = window.streamDockApi;
+    if (!streamDockApi) {
+      return;
+    }
+
+    try {
+      const nextSettings = await streamDockApi.updateAppSettings(updates);
+      setAppSettings(nextSettings);
+    } catch (error) {
+      console.error(error);
+      setActionError("Failed to save app settings.");
+    }
+  };
+
   return (
     <>
       <AppBar position="static" elevation={2}>
@@ -399,9 +443,60 @@ export const StatusBar = () => {
                 "Connect"
               )}
             </Button>
+            {hasNativeBridge ? (
+              <IconButton
+                color="inherit"
+                aria-label="Open app settings"
+                onClick={() => setIsSettingsOpen(true)}
+              >
+                <SettingsIcon />
+              </IconButton>
+            ) : null}
           </Box>
         </Toolbar>
       </AppBar>
+
+      <Dialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)}>
+        <DialogTitle>App Settings</DialogTitle>
+        <DialogContent sx={{ minWidth: 360 }}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={appSettings.startWithWindows}
+                onChange={(event) =>
+                  void handleUpdateAppSettings({
+                    startWithWindows: event.target.checked,
+                  })
+                }
+              />
+            }
+            label="Start with Windows"
+          />
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Launch MiraBox Controller automatically when you sign in.
+          </Typography>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={appSettings.hideToTray}
+                onChange={(event) =>
+                  void handleUpdateAppSettings({
+                    hideToTray: event.target.checked,
+                  })
+                }
+              />
+            }
+            label="Keep running in the system tray"
+          />
+          <Typography variant="body2" color="text.secondary">
+            Closing the window hides the app to the tray instead of quitting.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsSettingsOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={connectionError !== null}

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  AppSettings,
   StreamDockConnectionInfo,
   StreamDockDevicePresence,
 } from "./streamdock-types.js";
@@ -21,6 +22,9 @@ type StreamDeckKeyAction = {
 };
 
 export type StreamDockApi = {
+  getAppSettings: () => Promise<AppSettings>;
+  updateAppSettings: (updates: Partial<AppSettings>) => Promise<AppSettings>;
+  onAppSettingsChanged: (listener: (settings: AppSettings) => void) => () => void;
   getDevicePresence: () => Promise<StreamDockDevicePresence>;
   onDevicePresenceChanged: (
     listener: (presence: StreamDockDevicePresence) => void,
@@ -43,6 +47,21 @@ export type StreamDockApi = {
 };
 
 const api: StreamDockApi = {
+  getAppSettings: () => ipcRenderer.invoke("app-settings:get"),
+  updateAppSettings: (updates) =>
+    ipcRenderer.invoke("app-settings:update", updates),
+  onAppSettingsChanged: (listener) => {
+    const subscription = (
+      _event: Electron.IpcRendererEvent,
+      settings: AppSettings,
+    ) => {
+      listener(settings);
+    };
+    ipcRenderer.on("app-settings:changed", subscription);
+    return () => {
+      ipcRenderer.off("app-settings:changed", subscription);
+    };
+  },
   getDevicePresence: () =>
     ipcRenderer.invoke("streamdock:getDevicePresence"),
   onDevicePresenceChanged: (listener) => {

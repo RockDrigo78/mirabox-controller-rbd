@@ -1,6 +1,7 @@
-import { app, BrowserWindow, Menu, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, Tray, ipcMain } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import path from "path";
+import fs from "fs";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 import { shell } from "electron";
@@ -8,7 +9,10 @@ import {
   MiraboxStreamDock,
   detectStreamDockPresence,
 } from "./streamdock.js";
-import type { StreamDockDevicePresence } from "./streamdock-types.js";
+import type {
+  AppSettings,
+  StreamDockDevicePresence,
+} from "./streamdock-types.js";
 
 type StreamDeckKeyAction = {
   type:
@@ -26,7 +30,15 @@ type StreamDeckKeyAction = {
   command?: string;
 };
 
+const DEFAULT_APP_SETTINGS: AppSettings = {
+  startWithWindows: false,
+  hideToTray: false,
+};
+
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let appSettings: AppSettings = DEFAULT_APP_SETTINGS;
+let isQuitting = false;
 const streamDock = new MiraboxStreamDock();
 const keyActions = new Map<number, StreamDeckKeyAction>();
 const DEVICE_PRESENCE_POLL_MS = 2000;
@@ -45,7 +57,6 @@ const broadcastDevicePresence = () => {
       presence,
     );
   }
-
 };
 
 const startDevicePresenceMonitoring = () => {
@@ -77,6 +88,145 @@ const isDev = Boolean(devServerUrl);
 const appIconPath = isDev
   ? path.join(__dirname, "../../public/assets/Controller-logo-01.png")
   : path.join(__dirname, "../assets/Controller-logo-01.png");
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const normalizeAppSettings = (value: unknown): AppSettings => {
+  if (!isRecord(value)) {
+    return DEFAULT_APP_SETTINGS;
+  }
+
+  return {
+    startWithWindows:
+      typeof value.startWithWindows === "boolean"
+        ? value.startWithWindows
+        : DEFAULT_APP_SETTINGS.startWithWindows,
+    hideToTray:
+      typeof value.hideToTray === "boolean"
+        ? value.hideToTray
+        : DEFAULT_APP_SETTINGS.hideToTray,
+  };
+};
+
+const getAppSettingsPath = (): string =>
+  path.join(app.getPath("userData"), "settings.json");
+
+const readAppSettings = (): AppSettings => {
+  try {
+    const rawSettings = fs.readFileSync(getAppSettingsPath(), "utf8");
+    const parsedSettings = JSON.parse(rawSettings) as unknown;
+    return normalizeAppSettings(parsedSettings);
+  } catch {
+    return DEFAULT_APP_SETTINGS;
+  }
+};
+
+const writeAppSettings = (settings: AppSettings) => {
+  const settingsPath = getAppSettingsPath();
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+};
+
+const applyLoginItemSettings = (settings: AppSettings) => {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  app.setLoginItemSettings({
+    openAtLogin: settings.startWithWindows,
+    args: settings.hideToTray ? ["--hidden"] : [],
+  });
+};
+
+const showMainWindow = () => {
+  if (mainWindow === null) {
+    createWindow();
+    return;
+  }
+
+  mainWindow.show();
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.focus();
+};
+
+const hideMainWindow = () => {
+  mainWindow?.hide();
+};
+
+const updateTrayMenu = () => {
+  if (!tray) {
+    return;
+  }
+
+  const trayMenu = Menu.buildFromTemplate([
+    {
+      label: "Show MiraBox Controller",
+      click: showMainWindow,
+    },
+    {
+      label: "Hide to Tray",
+      click: hideMainWindow,
+      enabled: mainWindow !== null && mainWindow.isVisible(),
+    },
+    { type: "separator" },
+    {
+      label: "Start with Windows",
+      type: "checkbox",
+      checked: appSettings.startWithWindows,
+      click: () => {
+        updateAppSettings({
+          startWithWindows: !appSettings.startWithWindows,
+        });
+      },
+    },
+    {
+      label: "Keep Running in Tray When Closed",
+      type: "checkbox",
+      checked: appSettings.hideToTray,
+      click: () => {
+        updateAppSettings({
+          hideToTray: !appSettings.hideToTray,
+        });
+      },
+    },
+    { type: "separator" },
+    {
+      label: "Quit",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(trayMenu);
+};
+
+const createTray = () => {
+  if (tray) {
+    return;
+  }
+
+  tray = new Tray(appIconPath);
+  tray.setToolTip("MiraBox Controller");
+  tray.on("double-click", showMainWindow);
+  updateTrayMenu();
+};
+
+const updateAppSettings = (updates: Partial<AppSettings>): AppSettings => {
+  appSettings = normalizeAppSettings({
+    ...appSettings,
+    ...updates,
+  });
+  writeAppSettings(appSettings);
+  applyLoginItemSettings(appSettings);
+  updateTrayMenu();
+  mainWindow?.webContents.send("app-settings:changed", appSettings);
+  return appSettings;
+};
 
 const splitArguments = (value: string | undefined): string[] => {
   if (!value) {
@@ -148,6 +298,11 @@ const executeKeyAction = async (action: StreamDeckKeyAction | undefined) => {
 };
 
 const registerIpcHandlers = () => {
+  ipcMain.handle("app-settings:get", async () => appSettings);
+  ipcMain.handle(
+    "app-settings:update",
+    async (_event, updates: Partial<AppSettings>) => updateAppSettings(updates),
+  );
   ipcMain.handle("streamdock:getDevicePresence", async () =>
     detectStreamDockPresence(),
   );
@@ -201,11 +356,15 @@ const registerIpcHandlers = () => {
 };
 
 const createWindow = () => {
+  const shouldStartHidden =
+    appSettings.hideToTray && process.argv.includes("--hidden");
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 900,
     minHeight: 600,
+    show: !shouldStartHidden,
     icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -224,13 +383,29 @@ const createWindow = () => {
     mainWindow.webContents.openDevTools();
   }
 
+  mainWindow.on("show", updateTrayMenu);
+  mainWindow.on("hide", updateTrayMenu);
+  mainWindow.on("minimize", updateTrayMenu);
+  mainWindow.on("restore", updateTrayMenu);
+  mainWindow.on("close", (event) => {
+    if (!appSettings.hideToTray || isQuitting) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow?.hide();
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
+    updateTrayMenu();
   });
 };
 
 app.on("ready", () => {
+  appSettings = readAppSettings();
+  applyLoginItemSettings(appSettings);
   registerIpcHandlers();
+  createTray();
   startDevicePresenceMonitoring();
   streamDock.setSessionLostListener(() => {
     mainWindow?.webContents.send("streamdock:session-ended");
@@ -251,10 +426,18 @@ app.on("ready", () => {
   createWindow();
 });
 
-app.on("window-all-closed", () => {
+app.on("before-quit", () => {
+  isQuitting = true;
   stopDevicePresenceMonitoring();
   streamDock.disconnect();
-  if (process.platform !== "darwin") {
+});
+
+app.on("window-all-closed", () => {
+  if (appSettings.hideToTray && !isQuitting) {
+    return;
+  }
+
+  if (process.platform !== "darwin" || isQuitting) {
     app.quit();
   }
 });

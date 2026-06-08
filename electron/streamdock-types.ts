@@ -11,3 +11,8 @@ export type StreamDockDevicePresence = {
   isAttached: boolean;
   productName?: string;
 };
+
+export type AppSettings = {
+  startWithWindows: boolean;
+  hideToTray: boolean;
+};

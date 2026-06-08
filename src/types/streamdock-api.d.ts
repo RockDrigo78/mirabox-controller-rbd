@@ -12,9 +12,17 @@ type StreamDockDevicePresence = {
   productName?: string;
 };
 
+type AppSettings = {
+  startWithWindows: boolean;
+  hideToTray: boolean;
+};
+
 import type { StreamDeckKeyAction } from "./streamdeck";
 
 type StreamDockApi = {
+  getAppSettings: () => Promise<AppSettings>;
+  updateAppSettings: (updates: Partial<AppSettings>) => Promise<AppSettings>;
+  onAppSettingsChanged: (listener: (settings: AppSettings) => void) => () => void;
   getDevicePresence: () => Promise<StreamDockDevicePresence>;
   onDevicePresenceChanged: (
     listener: (presence: StreamDockDevicePresence) => void,
