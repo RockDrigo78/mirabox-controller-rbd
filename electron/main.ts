@@ -46,10 +46,6 @@ const broadcastDevicePresence = () => {
     );
   }
 
-  if (!presence.isAttached && streamDock.isConnected) {
-    streamDock.disconnect();
-    mainWindow?.webContents.send("streamdock:session-ended");
-  }
 };
 
 const startDevicePresenceMonitoring = () => {

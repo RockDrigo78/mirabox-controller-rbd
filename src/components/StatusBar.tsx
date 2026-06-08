@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStreamDeck } from "../context/useStreamDeck";
 import type {
   StreamDeckKey,
@@ -100,6 +100,9 @@ const getDisplaySyncSignature = (
   ].join(":");
 };
 
+const getPresenceSignature = (presence: StreamDockDevicePresence): string =>
+  `${presence.isAttached}:${presence.productName ?? ""}`;
+
 export const StatusBar = () => {
   const { state, setConnected, goToPreviousPage, goToNextPage } =
     useStreamDeck();
@@ -109,6 +112,8 @@ export const StatusBar = () => {
   const [devicePresence, setDevicePresence] =
     useState<StreamDockDevicePresence>({ isAttached: false });
   const sideDisplayKeyCountRef = useRef(0);
+  const userDisconnectedRef = useRef(false);
+  const lastAutoConnectPresenceSignatureRef = useRef<string | null>(null);
   const previousDisplaySyncSignatureRef = useRef(
     getDisplaySyncSignature(
       state.pages[state.activePageIndex],
@@ -116,6 +121,58 @@ export const StatusBar = () => {
     ),
   );
   const hasNativeBridge = Boolean(window.streamDockApi);
+
+  const connectToDevice = useCallback(async () => {
+    if (!hasNativeBridge) {
+      setConnected(false);
+      return;
+    }
+
+    const streamDockApi = window.streamDockApi;
+    if (!streamDockApi) {
+      setConnected(false);
+      return;
+    }
+
+    setConnecting(true);
+    setConnectionError(null);
+
+    try {
+      const connectionInfo = await streamDockApi.connect();
+      sideDisplayKeyCountRef.current = connectionInfo.sideDisplayKeyCount;
+      setConnected(true);
+      previousDisplaySyncSignatureRef.current = getDisplaySyncSignature(
+        state.pages[state.activePageIndex],
+        state.pages.length,
+      );
+      await syncKeysToNative(streamDockApi, state.keys);
+      await syncSideDisplaySlotsToNative(
+        streamDockApi,
+        state.pages[state.activePageIndex],
+        state.activePageIndex,
+        state.pages.length,
+        connectionInfo.sideDisplayKeyCount,
+      );
+    } catch (error) {
+      console.error(error);
+      setConnected(false);
+      setConnectionError(getErrorMessage(error));
+
+      try {
+        await streamDockApi.disconnect();
+      } catch {
+        // Ignore cleanup errors.
+      }
+    } finally {
+      setConnecting(false);
+    }
+  }, [
+    hasNativeBridge,
+    setConnected,
+    state.activePageIndex,
+    state.keys,
+    state.pages,
+  ]);
 
   useEffect(() => {
     const streamDockApi = window.streamDockApi;
@@ -193,56 +250,64 @@ export const StatusBar = () => {
     });
   }, [state.activePageIndex, state.isConnected, state.keys, state.pages]);
 
+  useEffect(() => {
+    if (
+      !hasNativeBridge ||
+      connecting ||
+      state.isConnected ||
+      userDisconnectedRef.current
+    ) {
+      return;
+    }
+
+    if (!devicePresence.isAttached) {
+      lastAutoConnectPresenceSignatureRef.current = null;
+      return;
+    }
+
+    const presenceSignature = getPresenceSignature(devicePresence);
+    if (lastAutoConnectPresenceSignatureRef.current === presenceSignature) {
+      return;
+    }
+
+    lastAutoConnectPresenceSignatureRef.current = presenceSignature;
+    void connectToDevice();
+  }, [
+    connectToDevice,
+    connecting,
+    devicePresence,
+    hasNativeBridge,
+    state.isConnected,
+  ]);
+
   const handleConnect = async () => {
-    if (!hasNativeBridge) {
-      setConnected(false);
-      return;
-    }
-
     const streamDockApi = window.streamDockApi;
-    if (!streamDockApi) {
+    if (!hasNativeBridge || !streamDockApi) {
       setConnected(false);
       return;
     }
 
-    setConnecting(true);
-    setConnectionError(null);
-
-    try {
-      if (state.isConnected) {
-        await streamDockApi.disconnect();
-        sideDisplayKeyCountRef.current = 0;
-        setConnected(false);
-      } else {
-        const connectionInfo = await streamDockApi.connect();
-        sideDisplayKeyCountRef.current = connectionInfo.sideDisplayKeyCount;
-        setConnected(true);
-        previousDisplaySyncSignatureRef.current = getDisplaySyncSignature(
-          state.pages[state.activePageIndex],
-          state.pages.length,
-        );
-        await syncKeysToNative(streamDockApi, state.keys);
-        await syncSideDisplaySlotsToNative(
-          streamDockApi,
-          state.pages[state.activePageIndex],
-          state.activePageIndex,
-          state.pages.length,
-          connectionInfo.sideDisplayKeyCount,
-        );
-      }
-    } catch (error) {
-      console.error(error);
-      setConnected(false);
-      setConnectionError(getErrorMessage(error));
+    if (state.isConnected) {
+      userDisconnectedRef.current = true;
+      setConnecting(true);
+      setConnectionError(null);
 
       try {
         await streamDockApi.disconnect();
-      } catch {
-        // Ignore cleanup errors.
+        sideDisplayKeyCountRef.current = 0;
+        setConnected(false);
+      } catch (error) {
+        console.error(error);
+        setConnectionError(getErrorMessage(error));
+      } finally {
+        setConnecting(false);
       }
-    } finally {
-      setConnecting(false);
+      return;
     }
+
+    userDisconnectedRef.current = false;
+    lastAutoConnectPresenceSignatureRef.current = null;
+    await connectToDevice();
   };
 
   return (
@@ -315,7 +380,9 @@ export const StatusBar = () => {
               color={state.isConnected ? "error" : "success"}
               onClick={() => void handleConnect()}
               disabled={
-                connecting || !hasNativeBridge || !devicePresence.isAttached
+                connecting ||
+                !hasNativeBridge ||
+                (!state.isConnected && !devicePresence.isAttached)
               }
               sx={{ minWidth: 120 }}
             >

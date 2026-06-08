@@ -19,6 +19,7 @@
   "build": {
     "appId": "com.mirabox.controller.rbd",
     "productName": "MiraBox Controller",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
@@ -32,6 +33,7 @@
     ],
     "win": {
       "icon": "public/assets/Controller-logo-01.png",
+      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",
