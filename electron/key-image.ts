@@ -296,7 +296,6 @@ export const buildLabelOnlyKeyJpeg = async (
 
 export const processKeyImageDataUrl = async (
   sourceDataUrl: string,
-  _keyImage: KeyImageTransform,
 ): Promise<string> => {
   const source = parseImageDataUrl(sourceDataUrl);
   const metadata = await sharp(source, { animated: true }).metadata();

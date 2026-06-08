@@ -406,10 +406,7 @@ export class MiraboxStreamDock {
   }
 
   async preprocessKeyImageDataUrl(sourceDataUrl: string): Promise<string> {
-    return processKeyImageDataUrl(
-      sourceDataUrl,
-      this.getKeyImageTransform(),
-    );
+    return processKeyImageDataUrl(sourceDataUrl);
   }
 
   async setKeyImageFromDataUrl(
