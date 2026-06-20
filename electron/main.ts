@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, Tray, ipcMain, powerMonitor } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import path from "path";
 import fs from "fs";
@@ -42,8 +42,10 @@ let isQuitting = false;
 const streamDock = new MiraboxStreamDock();
 const keyActions = new Map<number, StreamDeckKeyAction>();
 const DEVICE_PRESENCE_POLL_MS = 2000;
+const SYSTEM_RESUME_RECONNECT_DELAY_MS = 1000;
 let devicePresencePollTimer: NodeJS.Timeout | null = null;
 let lastDevicePresence: StreamDockDevicePresence = { isAttached: false };
+let systemResumeReconnectTimer: NodeJS.Timeout | null = null;
 
 const presenceSignature = (presence: StreamDockDevicePresence): string =>
   `${presence.isAttached}:${presence.productName ?? ""}`;
@@ -78,6 +80,39 @@ const stopDevicePresenceMonitoring = () => {
 
   clearInterval(devicePresencePollTimer);
   devicePresencePollTimer = null;
+};
+
+const clearSystemResumeReconnectTimer = () => {
+  if (!systemResumeReconnectTimer) {
+    return;
+  }
+
+  clearTimeout(systemResumeReconnectTimer);
+  systemResumeReconnectTimer = null;
+};
+
+const reconnectStreamDockAfterSystemResume = () => {
+  if (!streamDock.isConnected) {
+    return;
+  }
+
+  clearSystemResumeReconnectTimer();
+  systemResumeReconnectTimer = setTimeout(() => {
+    systemResumeReconnectTimer = null;
+
+    if (!streamDock.isConnected) {
+      return;
+    }
+
+    try {
+      streamDock.reconnect();
+      mainWindow?.webContents.send("streamdock:connection-restored");
+    } catch (error) {
+      console.error("Failed to reconnect MiraBox after system resume", error);
+      streamDock.disconnect();
+      mainWindow?.webContents.send("streamdock:session-ended");
+    }
+  }, SYSTEM_RESUME_RECONNECT_DELAY_MS);
 };
 
 const __filename = fileURLToPath(import.meta.url);
@@ -423,11 +458,13 @@ app.on("ready", () => {
       );
     });
   });
+  powerMonitor.on("resume", reconnectStreamDockAfterSystemResume);
   createWindow();
 });
 
 app.on("before-quit", () => {
   isQuitting = true;
+  clearSystemResumeReconnectTimer();
   stopDevicePresenceMonitoring();
   streamDock.disconnect();
 });

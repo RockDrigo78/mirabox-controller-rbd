@@ -61,6 +61,7 @@ export interface StreamDeckContextType {
   setConnected: (connected: boolean) => void;
   updateKey: (keyId: number, updates: Partial<StreamDeckKey>) => void;
   clearKeyImageState: (keyId: number) => void;
+  clearKeyState: (keyId: number) => void;
   selectKey: (keyId: number) => void;
   getKey: (keyId: number) => StreamDeckKey | undefined;
   addPage: () => void;
@@ -288,6 +289,39 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
+  const clearKeyState = useCallback((keyId: number) => {
+    setState((prev) => {
+      const pages = prev.pages.map((page, pageIndex) => {
+        if (pageIndex !== prev.activePageIndex) {
+          return page;
+        }
+
+        return {
+          ...page,
+          keys: page.keys.map((key) => {
+            if (key.id !== keyId) {
+              return key;
+            }
+
+            return {
+              id: key.id,
+              row: key.row,
+              column: key.column,
+            };
+          }),
+        };
+      });
+
+      persistPages(pages, prev.activePageIndex);
+
+      return {
+        ...prev,
+        pages,
+        keys: getActiveKeys(pages, prev.activePageIndex),
+      };
+    });
+  }, []);
+
   const selectKey = useCallback((keyId: number) => {
     setState((prev) => ({ ...prev, selectedKeyId: keyId }));
   }, []);
@@ -428,6 +462,7 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
     setConnected,
     updateKey,
     clearKeyImageState,
+    clearKeyState,
     selectKey,
     getKey,
     addPage,

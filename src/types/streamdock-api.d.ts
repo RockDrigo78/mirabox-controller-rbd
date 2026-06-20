@@ -28,6 +28,7 @@ type StreamDockApi = {
     listener: (presence: StreamDockDevicePresence) => void,
   ) => () => void;
   onSessionEnded: (listener: () => void) => () => void;
+  onConnectionRestored: (listener: () => void) => () => void;
   connect: () => Promise<StreamDockConnectionInfo>;
   disconnect: () => Promise<void>;
   setBrightness: (value: number) => Promise<void>;

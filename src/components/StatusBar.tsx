@@ -135,6 +135,8 @@ export const StatusBar = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const sideDisplayKeyCountRef = useRef(0);
   const userDisconnectedRef = useRef(false);
+  const streamDeckStateRef = useRef(state);
+  streamDeckStateRef.current = state;
   const lastAutoConnectPresenceSignatureRef = useRef<string | null>(null);
   const previousDisplaySyncSignatureRef = useRef(
     getDisplaySyncSignature(
@@ -143,6 +145,36 @@ export const StatusBar = () => {
     ),
   );
   const hasNativeBridge = Boolean(window.streamDockApi);
+
+  const resyncConnectedDisplay = useCallback(async () => {
+    const streamDockApi = window.streamDockApi;
+    if (!streamDockApi) {
+      return;
+    }
+
+    const currentState = streamDeckStateRef.current;
+    if (!currentState.isConnected) {
+      return;
+    }
+
+    try {
+      await syncKeysToNative(streamDockApi, currentState.keys);
+      await syncSideDisplaySlotsToNative(
+        streamDockApi,
+        currentState.pages[currentState.activePageIndex],
+        currentState.activePageIndex,
+        currentState.pages.length,
+        sideDisplayKeyCountRef.current,
+      );
+      previousDisplaySyncSignatureRef.current = getDisplaySyncSignature(
+        currentState.pages[currentState.activePageIndex],
+        currentState.pages.length,
+      );
+    } catch (error) {
+      console.error(error);
+      setActionError("Failed to restore the MiraBox display after wake.");
+    }
+  }, []);
 
   const connectToDevice = useCallback(async () => {
     if (!hasNativeBridge) {
@@ -218,6 +250,11 @@ export const StatusBar = () => {
         "The MiraBox was unplugged or lost connection. Plug it back in and connect again.",
       );
     });
+    const unsubscribeConnectionRestored = streamDockApi.onConnectionRestored(
+      () => {
+        void resyncConnectedDisplay();
+      },
+    );
     const unsubscribeKeyActionError = streamDockApi.onKeyActionError(
       (message) => {
         setActionError(message);
@@ -238,10 +275,11 @@ export const StatusBar = () => {
       unsubscribeSettingsChanged();
       unsubscribePresence();
       unsubscribeSessionEnded();
+      unsubscribeConnectionRestored();
       unsubscribeKeyActionError();
       unsubscribePageNavigation();
     };
-  }, [goToNextPage, goToPreviousPage, setConnected]);
+  }, [goToNextPage, goToPreviousPage, resyncConnectedDisplay, setConnected]);
 
   useEffect(() => {
     const displaySyncSignature = getDisplaySyncSignature(

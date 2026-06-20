@@ -294,6 +294,11 @@ export class MiraboxStreamDock {
     return this.device !== null;
   }
 
+  reconnect(): StreamDockConnectionInfo {
+    this.disconnect();
+    return this.connect();
+  }
+
   connect(): StreamDockConnectionInfo {
     if (this.device && this.deviceInfo) {
       return toConnectionInfo(this.deviceInfo);

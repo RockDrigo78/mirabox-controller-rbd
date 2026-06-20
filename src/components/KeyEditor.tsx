@@ -6,6 +6,11 @@ import {
   Card,
   CardContent,
   CardHeader,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControl,
   InputLabel,
   MenuItem,
@@ -52,11 +57,13 @@ export const KeyEditor = () => {
     getKey,
     updateKey,
     clearKeyImageState,
+    clearKeyState,
     goToPreviousPage,
     goToNextPage,
   } = useStreamDeck();
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [isDeleteKeyDialogOpen, setIsDeleteKeyDialogOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const isConnectedRef = useRef(state.isConnected);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -287,8 +294,51 @@ export const KeyEditor = () => {
     })();
   };
 
+  const handleConfirmDeleteKey = () => {
+    const keyIdToDelete = state.selectedKeyId;
+    if (keyIdToDelete === null) {
+      return;
+    }
+
+    setIsDeleteKeyDialogOpen(false);
+    setUploadError(null);
+    setActionMessage(null);
+
+    if (labelSyncTimeoutRef.current) {
+      clearTimeout(labelSyncTimeoutRef.current);
+      labelSyncTimeoutRef.current = null;
+    }
+
+    keyImageSyncGenerationRef.current += 1;
+    clearKeyState(keyIdToDelete);
+
+    const streamDockApi = window.streamDockApi;
+    if (!streamDockApi) {
+      return;
+    }
+
+    void (async () => {
+      if (!isConnectedRef.current) {
+        return;
+      }
+
+      try {
+        await streamDockApi.clearKeyImage(keyIdToDelete);
+        await streamDockApi.setKeyAction(keyIdToDelete, undefined);
+      } catch (error) {
+        console.error(error);
+        setUploadError(getErrorMessage(error));
+      }
+    })();
+  };
+
   const action = key.action;
   const actionType: StreamDeckKeyActionType = action?.type ?? "none";
+  const hasKeyContent = Boolean(
+    key.image ||
+      key.label?.trim() ||
+      (action && action.type !== "none"),
+  );
 
   const handleActionTypeChange = (nextType: StreamDeckKeyActionType) => {
     if (nextType === "none") {
@@ -478,6 +528,16 @@ export const KeyEditor = () => {
           Clear Key Image
         </Button>
 
+        <Button
+          variant="outlined"
+          color="error"
+          startIcon={<DeleteIcon />}
+          onClick={() => setIsDeleteKeyDialogOpen(true)}
+          disabled={!hasKeyContent}
+        >
+          Delete Key
+        </Button>
+
         <Stack spacing={2}>
           <FormControl fullWidth>
             <InputLabel id="key-action-type-label">Action</InputLabel>
@@ -584,6 +644,29 @@ export const KeyEditor = () => {
             : "Images and actions are saved locally and will sync on the next connection."}
         </Alert>
       </CardContent>
+
+      <Dialog
+        open={isDeleteKeyDialogOpen}
+        onClose={() => setIsDeleteKeyDialogOpen(false)}
+      >
+        <DialogTitle>Delete Key?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will remove the image, label, and action from key {key.id + 1}.
+            This cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsDeleteKeyDialogOpen(false)}>Cancel</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleConfirmDeleteKey}
+          >
+            Delete Key
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   );
 };
