@@ -220,6 +220,8 @@ export const buildDeviceKeyPipeline = (
 };
 
 export const encodeKeyJpeg = async (pipeline: sharp.Sharp): Promise<Buffer> => {
+  let lowestQualityJpeg: Buffer | null = null;
+
   for (let quality = 90; quality >= 25; quality -= 5) {
     const jpeg = await pipeline
       .clone()
@@ -232,14 +234,12 @@ export const encodeKeyJpeg = async (pipeline: sharp.Sharp): Promise<Buffer> => {
     if (jpeg.byteLength <= MAX_KEY_JPEG_BYTES) {
       return jpeg;
     }
+
+    lowestQualityJpeg = jpeg;
   }
 
-  return pipeline
-    .jpeg({
-      quality: 25,
-      chromaSubsampling: "4:2:0",
-    })
-    .toBuffer();
+  // Every quality level exceeded the size cap; the quality-25 encode is the smallest we can do.
+  return lowestQualityJpeg as Buffer;
 };
 
 export const processKeyImageToJpeg = async (
@@ -320,14 +320,10 @@ export const buildGifFrames = async (
   const pages = metadata.pages ?? 1;
   const delays = metadata.delay ?? [];
 
-  const frames: Array<{ data: Buffer; delayMs: number }> = [];
-  for (let page = 0; page < pages; page += 1) {
-    const jpeg = await processKeyImageToJpeg(source, keyImage, page, label);
-    frames.push({
-      data: jpeg,
+  return Promise.all(
+    Array.from({ length: pages }, async (_value, page) => ({
+      data: await processKeyImageToJpeg(source, keyImage, page, label),
       delayMs: Math.max(delays[page] ?? delays[0] ?? 100, 40),
-    });
-  }
-
-  return frames;
+    })),
+  );
 };

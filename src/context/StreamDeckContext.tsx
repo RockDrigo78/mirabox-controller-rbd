@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { StreamDeckContext } from "./StreamDeckReactContext";
 import type { StreamDeckKeyAction } from "../types/streamdeck";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../utils/sideDisplaySlots";
 
 const STORAGE_KEY = "mirabox-controller:key-config:v1";
+const PERSIST_DEBOUNCE_MS = 300;
 const KEY_ROW_COUNT = 3;
 const KEY_COLUMN_COUNT = 5;
 
@@ -72,6 +73,8 @@ export interface StreamDeckContextType {
   goToNextPage: () => void;
 }
 
+type InternalStreamDeckState = Omit<StreamDeckState, "keys">;
+
 // Initialize grid with 5x3 = 15 keys (MiraBox HSV 293S layout)
 const initializeGrid = (): StreamDeckKey[] => {
   const keys: StreamDeckKey[] = [];
@@ -113,11 +116,6 @@ const mergeStoredKeys = (
     return storedKey ? { ...key, ...storedKey } : key;
   });
 
-const getActiveKeys = (
-  pages: StreamDeckPage[],
-  activePageIndex: number,
-): StreamDeckKey[] => pages[activePageIndex]?.keys ?? [];
-
 const isStoredPayload = (value: unknown): value is StoredStreamDeckPayload => {
   if (!value || typeof value !== "object") {
     return false;
@@ -127,14 +125,24 @@ const isStoredPayload = (value: unknown): value is StoredStreamDeckPayload => {
   return candidate.version === 2 && Array.isArray(candidate.pages);
 };
 
-const restorePages = (): StreamDeckPage[] => {
+type RestoredStreamDeckState = {
+  pages: StreamDeckPage[];
+  activePageIndex: number;
+};
+
+const createDefaultRestoredState = (): RestoredStreamDeckState => ({
+  pages: [createPage(1, "page-1")],
+  activePageIndex: 0,
+});
+
+const restoreStoredState = (): RestoredStreamDeckState => {
   if (typeof window === "undefined") {
-    return [createPage(1, "page-1")];
+    return createDefaultRestoredState();
   }
 
   const rawValue = window.localStorage.getItem(STORAGE_KEY);
   if (!rawValue) {
-    return [createPage(1, "page-1")];
+    return createDefaultRestoredState();
   }
 
   try {
@@ -147,19 +155,38 @@ const restorePages = (): StreamDeckPage[] => {
         sideDisplay: normalizeSideDisplayConfig(page.sideDisplay),
       }));
 
-      return pages.length > 0 ? pages : [createPage(1, "page-1")];
+      if (pages.length === 0) {
+        return createDefaultRestoredState();
+      }
+
+      const storedActivePageIndex = Number.isInteger(
+        parsedValue.activePageIndex,
+      )
+        ? parsedValue.activePageIndex
+        : 0;
+
+      return {
+        pages,
+        activePageIndex: Math.min(
+          Math.max(storedActivePageIndex, 0),
+          pages.length - 1,
+        ),
+      };
     }
 
     const storedKeys = parsedValue as Record<string, StoredStreamDeckKey>;
-    return [
-      {
-        ...createPage(1, "page-1"),
-        keys: mergeStoredKeys(initializeGrid(), storedKeys),
-      },
-    ];
+    return {
+      pages: [
+        {
+          ...createPage(1, "page-1"),
+          keys: mergeStoredKeys(initializeGrid(), storedKeys),
+        },
+      ],
+      activePageIndex: 0,
+    };
   } catch (error) {
     console.error("Failed to restore saved key configuration", error);
-    return [createPage(1, "page-1")];
+    return createDefaultRestoredState();
   }
 };
 
@@ -201,17 +228,71 @@ const persistPages = (pages: StreamDeckPage[], activePageIndex: number) => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 };
 
+const updateActivePage = (
+  prev: InternalStreamDeckState,
+  updatePage: (page: StreamDeckPage) => StreamDeckPage,
+): InternalStreamDeckState => ({
+  ...prev,
+  pages: prev.pages.map((page, pageIndex) =>
+    pageIndex === prev.activePageIndex ? updatePage(page) : page,
+  ),
+});
+
+const updateKeyOnActivePage = (
+  prev: InternalStreamDeckState,
+  keyId: number,
+  updateTargetKey: (key: StreamDeckKey) => StreamDeckKey,
+): InternalStreamDeckState =>
+  updateActivePage(prev, (page) => ({
+    ...page,
+    keys: page.keys.map((key) =>
+      key.id === keyId ? updateTargetKey(key) : key,
+    ),
+  }));
+
 export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
-  const [state, setState] = useState<StreamDeckState>(() => {
-    const restoredPages = restorePages();
+  const [state, setState] = useState<InternalStreamDeckState>(() => {
+    const restoredState = restoreStoredState();
     return {
       isConnected: false,
-      pages: restoredPages,
-      activePageIndex: 0,
-      keys: getActiveKeys(restoredPages, 0),
+      pages: restoredState.pages,
+      activePageIndex: restoredState.activePageIndex,
       selectedKeyId: null,
     };
   });
+
+  const latestPersistableStateRef = useRef({
+    pages: state.pages,
+    activePageIndex: state.activePageIndex,
+  });
+
+  // Debounce persistence: serializing every page image on each keystroke is expensive.
+  useEffect(() => {
+    latestPersistableStateRef.current = {
+      pages: state.pages,
+      activePageIndex: state.activePageIndex,
+    };
+
+    const persistTimeout = window.setTimeout(() => {
+      persistPages(state.pages, state.activePageIndex);
+    }, PERSIST_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(persistTimeout);
+    };
+  }, [state.pages, state.activePageIndex]);
+
+  useEffect(() => {
+    const flushPersistence = () => {
+      const { pages, activePageIndex } = latestPersistableStateRef.current;
+      persistPages(pages, activePageIndex);
+    };
+
+    window.addEventListener("beforeunload", flushPersistence);
+    return () => {
+      window.removeEventListener("beforeunload", flushPersistence);
+    };
+  }, []);
 
   const setConnected = useCallback((connected: boolean) => {
     setState((prev) => ({ ...prev, isConnected: connected }));
@@ -219,129 +300,58 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
 
   const updateKey = useCallback(
     (keyId: number, updates: Partial<StreamDeckKey>) => {
-      setState((prev) => {
-        const pages = prev.pages.map((page, pageIndex) => {
-          if (pageIndex !== prev.activePageIndex) {
-            return page;
+      setState((prev) =>
+        updateKeyOnActivePage(prev, keyId, (key) => {
+          const nextKey = { ...key, ...updates };
+          if ("label" in updates && updates.label === undefined) {
+            delete nextKey.label;
+          }
+          if ("image" in updates && updates.image === undefined) {
+            delete nextKey.image;
+          }
+          if ("action" in updates && updates.action === undefined) {
+            delete nextKey.action;
           }
 
-          return {
-            ...page,
-            keys: page.keys.map((key) => {
-              if (key.id !== keyId) {
-                return key;
-              }
-
-              const nextKey = { ...key, ...updates };
-              if ("label" in updates && updates.label === undefined) {
-                delete nextKey.label;
-              }
-              if ("image" in updates && updates.image === undefined) {
-                delete nextKey.image;
-              }
-              if ("action" in updates && updates.action === undefined) {
-                delete nextKey.action;
-              }
-
-              return nextKey;
-            }),
-          };
-        });
-        persistPages(pages, prev.activePageIndex);
-        return {
-          ...prev,
-          pages,
-          keys: getActiveKeys(pages, prev.activePageIndex),
-        };
-      });
+          return nextKey;
+        }),
+      );
     },
     [],
   );
 
   const clearKeyImageState = useCallback((keyId: number) => {
-    setState((prev) => {
-      const pages = prev.pages.map((page, pageIndex) => {
-        if (pageIndex !== prev.activePageIndex) {
-          return page;
-        }
-
-        return {
-          ...page,
-          keys: page.keys.map((key) => {
-            if (key.id !== keyId) {
-              return key;
-            }
-
-            const keyWithoutImage = { ...key };
-            delete keyWithoutImage.image;
-            return keyWithoutImage;
-          }),
-        };
-      });
-
-      persistPages(pages, prev.activePageIndex);
-
-      return {
-        ...prev,
-        pages,
-        keys: getActiveKeys(pages, prev.activePageIndex),
-      };
-    });
+    setState((prev) =>
+      updateKeyOnActivePage(prev, keyId, (key) => {
+        const keyWithoutImage = { ...key };
+        delete keyWithoutImage.image;
+        return keyWithoutImage;
+      }),
+    );
   }, []);
 
   const clearKeyState = useCallback((keyId: number) => {
-    setState((prev) => {
-      const pages = prev.pages.map((page, pageIndex) => {
-        if (pageIndex !== prev.activePageIndex) {
-          return page;
-        }
-
-        return {
-          ...page,
-          keys: page.keys.map((key) => {
-            if (key.id !== keyId) {
-              return key;
-            }
-
-            return {
-              id: key.id,
-              row: key.row,
-              column: key.column,
-            };
-          }),
-        };
-      });
-
-      persistPages(pages, prev.activePageIndex);
-
-      return {
-        ...prev,
-        pages,
-        keys: getActiveKeys(pages, prev.activePageIndex),
-      };
-    });
+    setState((prev) =>
+      updateKeyOnActivePage(prev, keyId, (key) => ({
+        id: key.id,
+        row: key.row,
+        column: key.column,
+      })),
+    );
   }, []);
 
   const selectKey = useCallback((keyId: number) => {
     setState((prev) => ({ ...prev, selectedKeyId: keyId }));
   }, []);
 
-  const getKey = useCallback(
-    (keyId: number) => state.keys.find((key) => key.id === keyId),
-    [state.keys],
-  );
-
   const addPage = useCallback(() => {
     setState((prev) => {
       const pages = [...prev.pages, createPage(prev.pages.length + 1)];
-      const activePageIndex = pages.length - 1;
-      persistPages(pages, activePageIndex);
 
       return {
         ...prev,
         pages,
-        activePageIndex,
-        keys: getActiveKeys(pages, activePageIndex),
+        activePageIndex: pages.length - 1,
         selectedKeyId: null,
       };
     });
@@ -356,122 +366,111 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
       const pages = prev.pages.filter(
         (_page, pageIndex) => pageIndex !== prev.activePageIndex,
       );
-      const activePageIndex = Math.min(prev.activePageIndex, pages.length - 1);
-      persistPages(pages, activePageIndex);
 
       return {
         ...prev,
         pages,
-        activePageIndex,
-        keys: getActiveKeys(pages, activePageIndex),
+        activePageIndex: Math.min(prev.activePageIndex, pages.length - 1),
         selectedKeyId: null,
       };
     });
   }, []);
 
   const setSideDisplayMode = useCallback((mode: SideDisplayMode) => {
-    setState((prev) => {
-      const pages = prev.pages.map((page, pageIndex) => {
-        if (pageIndex !== prev.activePageIndex) {
-          return page;
-        }
-
-        return {
-          ...page,
-          sideDisplay: {
-            ...page.sideDisplay,
-            mode,
-          },
-        };
-      });
-      persistPages(pages, prev.activePageIndex);
-
-      return {
-        ...prev,
-        pages,
-      };
-    });
+    setState((prev) =>
+      updateActivePage(prev, (page) => ({
+        ...page,
+        sideDisplay: {
+          ...page.sideDisplay,
+          mode,
+        },
+      })),
+    );
   }, []);
 
   const updateSideDisplayImage = useCallback(
     (slotId: number, image: string | undefined) => {
-      setState((prev) => {
-        const pages = prev.pages.map((page, pageIndex) => {
-          if (pageIndex !== prev.activePageIndex) {
-            return page;
-          }
+      setState((prev) =>
+        updateActivePage(prev, (page) => ({
+          ...page,
+          sideDisplay: {
+            ...page.sideDisplay,
+            imageSlots: page.sideDisplay.imageSlots.map((slot) => {
+              if (slot.id !== slotId) {
+                return slot;
+              }
 
-          return {
-            ...page,
-            sideDisplay: {
-              ...page.sideDisplay,
-              imageSlots: page.sideDisplay.imageSlots.map((slot) => {
-                if (slot.id !== slotId) {
-                  return slot;
-                }
-
-                return image ? { ...slot, image } : { id: slot.id };
-              }),
-            },
-          };
-        });
-        persistPages(pages, prev.activePageIndex);
-
-        return {
-          ...prev,
-          pages,
-        };
-      });
+              return image ? { ...slot, image } : { id: slot.id };
+            }),
+          },
+        })),
+      );
     },
     [],
   );
 
   const goToPreviousPage = useCallback(() => {
-    setState((prev) => {
-      const activePageIndex =
+    setState((prev) => ({
+      ...prev,
+      activePageIndex:
         prev.activePageIndex === 0
           ? prev.pages.length - 1
-          : prev.activePageIndex - 1;
-      persistPages(prev.pages, activePageIndex);
-
-      return {
-        ...prev,
-        activePageIndex,
-        keys: getActiveKeys(prev.pages, activePageIndex),
-        selectedKeyId: null,
-      };
-    });
+          : prev.activePageIndex - 1,
+      selectedKeyId: null,
+    }));
   }, []);
 
   const goToNextPage = useCallback(() => {
-    setState((prev) => {
-      const activePageIndex = (prev.activePageIndex + 1) % prev.pages.length;
-      persistPages(prev.pages, activePageIndex);
-
-      return {
-        ...prev,
-        activePageIndex,
-        keys: getActiveKeys(prev.pages, activePageIndex),
-        selectedKeyId: null,
-      };
-    });
+    setState((prev) => ({
+      ...prev,
+      activePageIndex: (prev.activePageIndex + 1) % prev.pages.length,
+      selectedKeyId: null,
+    }));
   }, []);
 
-  const value: StreamDeckContextType = {
-    state,
-    setConnected,
-    updateKey,
-    clearKeyImageState,
-    clearKeyState,
-    selectKey,
-    getKey,
-    addPage,
-    deleteCurrentPage,
-    setSideDisplayMode,
-    updateSideDisplayImage,
-    goToPreviousPage,
-    goToNextPage,
-  };
+  const activeKeys = useMemo(
+    () => state.pages[state.activePageIndex]?.keys ?? [],
+    [state.pages, state.activePageIndex],
+  );
+
+  const getKey = useCallback(
+    (keyId: number) => activeKeys.find((key) => key.id === keyId),
+    [activeKeys],
+  );
+
+  const value = useMemo<StreamDeckContextType>(
+    () => ({
+      state: { ...state, keys: activeKeys },
+      setConnected,
+      updateKey,
+      clearKeyImageState,
+      clearKeyState,
+      selectKey,
+      getKey,
+      addPage,
+      deleteCurrentPage,
+      setSideDisplayMode,
+      updateSideDisplayImage,
+      goToPreviousPage,
+      goToNextPage,
+    }),
+    [
+      state,
+      activeKeys,
+      setConnected,
+      updateKey,
+      clearKeyImageState,
+      clearKeyState,
+      selectKey,
+      getKey,
+      addPage,
+      deleteCurrentPage,
+      setSideDisplayMode,
+      updateSideDisplayImage,
+      goToPreviousPage,
+      goToNextPage,
+    ],
+  );
 
   return (
     <StreamDeckContext.Provider value={value}>

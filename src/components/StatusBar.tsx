@@ -136,7 +136,9 @@ export const StatusBar = () => {
   const sideDisplayKeyCountRef = useRef(0);
   const userDisconnectedRef = useRef(false);
   const streamDeckStateRef = useRef(state);
-  streamDeckStateRef.current = state;
+  useEffect(() => {
+    streamDeckStateRef.current = state;
+  }, [state]);
   const lastAutoConnectPresenceSignatureRef = useRef<string | null>(null);
   const previousDisplaySyncSignatureRef = useRef(
     getDisplaySyncSignature(

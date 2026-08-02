@@ -44,6 +44,7 @@ const KEY_GRID_GAP_PX = 10;
 const KEY_ROW_COUNT = 3;
 const KEY_COLUMN_COUNT = 5;
 const SIDE_DISPLAY_CELL_SIZE_PX = 80;
+const BRIGHTNESS_SYNC_DEBOUNCE_MS = 120;
 
 const keyImageSx = {
   width: "100%",
@@ -64,7 +65,6 @@ export const StreamDeckGrid = () => {
     goToPreviousPage,
     goToNextPage,
   } = useStreamDeck();
-  const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [sideDisplayImageSlotIdToDelete, setSideDisplayImageSlotIdToDelete] =
     useState<number | null>(null);
@@ -87,7 +87,13 @@ export const StreamDeckGrid = () => {
       return;
     }
 
-    void window.streamDockApi?.setBrightness(brightness);
+    const brightnessSyncTimeout = window.setTimeout(() => {
+      void window.streamDockApi?.setBrightness(brightness);
+    }, BRIGHTNESS_SYNC_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(brightnessSyncTimeout);
+    };
   }, [brightness, state.isConnected]);
 
   const handleConfirmDeletePage = () => {
@@ -160,14 +166,7 @@ export const StreamDeckGrid = () => {
   };
 
   const handleBrightnessChange = (_event: Event, value: number | number[]) => {
-    const nextBrightness = Array.isArray(value) ? value[0] : value;
-    setBrightness(nextBrightness);
-
-    if (!state.isConnected) {
-      return;
-    }
-
-    void window.streamDockApi?.setBrightness(nextBrightness);
+    setBrightness(Array.isArray(value) ? value[0] : value);
   };
 
   return (
@@ -266,8 +265,6 @@ export const StreamDeckGrid = () => {
               <Paper
                 key={key.id}
                 onClick={() => selectKey(key.id)}
-                onMouseEnter={() => setHoveredId(key.id)}
-                onMouseLeave={() => setHoveredId(null)}
                 sx={{
                   aspectRatio: "1",
                   cursor: "pointer",
@@ -290,9 +287,7 @@ export const StreamDeckGrid = () => {
                   boxShadow:
                     state.selectedKeyId === key.id
                       ? "0 0 12px rgba(88, 166, 255, 0.5), inset 0 0 6px rgba(88, 166, 255, 0.1)"
-                      : hoveredId === key.id
-                        ? "0 0 8px rgba(88, 166, 255, 0.3)"
-                        : "0 2px 4px rgba(0, 0, 0, 0.3)",
+                      : "0 2px 4px rgba(0, 0, 0, 0.3)",
                   "&:hover": {
                     borderColor: "#5a5a6a",
                     boxShadow: "0 4px 14px rgba(88, 166, 255, 0.35)",
