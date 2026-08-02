@@ -8,6 +8,7 @@ import {
   type SideDisplayConfig,
   type SideDisplayMode,
 } from "../utils/sideDisplaySlots";
+import { copyKeyContent } from "../utils/keyContent";
 
 const STORAGE_KEY = "mirabox-controller:key-config:v1";
 const PERSIST_DEBOUNCE_MS = 300;
@@ -64,6 +65,7 @@ export interface StreamDeckContextType {
   clearKeyImageState: (keyId: number) => void;
   clearKeyState: (keyId: number) => void;
   selectKey: (keyId: number) => void;
+  swapKeys: (sourceKeyId: number, targetKeyId: number) => void;
   getKey: (keyId: number) => StreamDeckKey | undefined;
   addPage: () => void;
   deleteCurrentPage: () => void;
@@ -344,6 +346,49 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
     setState((prev) => ({ ...prev, selectedKeyId: keyId }));
   }, []);
 
+  const swapKeys = useCallback((sourceKeyId: number, targetKeyId: number) => {
+    if (sourceKeyId === targetKeyId) {
+      return;
+    }
+
+    setState((prev) =>
+      updateActivePage(prev, (page) => {
+        const sourceKey = page.keys.find((key) => key.id === sourceKeyId);
+        const targetKey = page.keys.find((key) => key.id === targetKeyId);
+
+        if (!sourceKey || !targetKey) {
+          return page;
+        }
+
+        const sourceContent = {
+          image: sourceKey.image,
+          label: sourceKey.label,
+          action: sourceKey.action,
+        };
+        const targetContent = {
+          image: targetKey.image,
+          label: targetKey.label,
+          action: targetKey.action,
+        };
+
+        return {
+          ...page,
+          keys: page.keys.map((key) => {
+            if (key.id === sourceKeyId) {
+              return copyKeyContent(key, targetContent);
+            }
+
+            if (key.id === targetKeyId) {
+              return copyKeyContent(key, sourceContent);
+            }
+
+            return key;
+          }),
+        };
+      }),
+    );
+  }, []);
+
   const addPage = useCallback(() => {
     setState((prev) => {
       const pages = [...prev.pages, createPage(prev.pages.length + 1)];
@@ -446,6 +491,7 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
       clearKeyImageState,
       clearKeyState,
       selectKey,
+      swapKeys,
       getKey,
       addPage,
       deleteCurrentPage,
@@ -462,6 +508,7 @@ export const StreamDeckProvider = ({ children }: { children: ReactNode }) => {
       clearKeyImageState,
       clearKeyState,
       selectKey,
+      swapKeys,
       getKey,
       addPage,
       deleteCurrentPage,

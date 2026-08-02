@@ -2,6 +2,7 @@ import { useStreamDeck } from "../context/useStreamDeck";
 import type { StreamDeckKey } from "../context/StreamDeckContext";
 import { KeyLabelDisplay } from "./KeyLabelDisplay";
 import { getSideDisplaySlots } from "../utils/sideDisplaySlots";
+import { copyKeyContent } from "../utils/keyContent";
 import {
   Box,
   Button,
@@ -28,6 +29,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type DragEvent,
   type MouseEvent,
 } from "react";
 
@@ -54,10 +56,28 @@ const keyImageSx = {
   display: "block",
 };
 
+const syncKeyToNative = async (key: StreamDeckKey) => {
+  const streamDockApi = window.streamDockApi;
+  if (!streamDockApi) {
+    return;
+  }
+
+  await streamDockApi.setKeyAction(key.id, key.action);
+
+  if (!key.image && !key.label?.trim()) {
+    await streamDockApi.clearKeyImage(key.id);
+    return;
+  }
+
+  await streamDockApi.setKeyImage(key.id, key.image ?? "", key.label);
+};
+
 export const StreamDeckGrid = () => {
   const {
     state,
     selectKey,
+    swapKeys,
+    getKey,
     addPage,
     deleteCurrentPage,
     setSideDisplayMode,
@@ -68,9 +88,12 @@ export const StreamDeckGrid = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [sideDisplayImageSlotIdToDelete, setSideDisplayImageSlotIdToDelete] =
     useState<number | null>(null);
+  const [draggedKeyId, setDraggedKeyId] = useState<number | null>(null);
+  const [dropTargetKeyId, setDropTargetKeyId] = useState<number | null>(null);
   const [brightness, setBrightness] = useState(100);
   const sideDisplayFileInputRef = useRef<HTMLInputElement>(null);
   const selectedSideDisplaySlotIdRef = useRef<number | null>(null);
+  const didDragKeyRef = useRef(false);
   const hasMultiplePages = state.pages.length > 1;
   const activePage = state.pages[state.activePageIndex];
   const isCustomSideDisplay = activePage?.sideDisplay.mode === "custom-images";
@@ -169,6 +192,91 @@ export const StreamDeckGrid = () => {
     setBrightness(Array.isArray(value) ? value[0] : value);
   };
 
+  const handleKeyClick = (keyId: number) => {
+    if (didDragKeyRef.current) {
+      didDragKeyRef.current = false;
+      return;
+    }
+
+    selectKey(keyId);
+  };
+
+  const handleKeyDragStart = (event: DragEvent<HTMLDivElement>, keyId: number) => {
+    didDragKeyRef.current = false;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(keyId));
+    setDraggedKeyId(keyId);
+  };
+
+  const handleKeyDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    keyId: number,
+  ) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+
+    if (draggedKeyId !== keyId) {
+      setDropTargetKeyId(keyId);
+    }
+  };
+
+  const handleKeyDragLeave = (keyId: number) => {
+    setDropTargetKeyId((currentDropTargetKeyId) =>
+      currentDropTargetKeyId === keyId ? null : currentDropTargetKeyId,
+    );
+  };
+
+  const handleKeyDrop = (event: DragEvent<HTMLDivElement>, targetKeyId: number) => {
+    event.preventDefault();
+    didDragKeyRef.current = true;
+
+    const sourceKeyId = Number(event.dataTransfer.getData("text/plain"));
+    setDraggedKeyId(null);
+    setDropTargetKeyId(null);
+
+    if (
+      Number.isNaN(sourceKeyId) ||
+      sourceKeyId === targetKeyId ||
+      sourceKeyId < 0
+    ) {
+      return;
+    }
+
+    const sourceKey = getKey(sourceKeyId);
+    const targetKey = getKey(targetKeyId);
+
+    if (!sourceKey || !targetKey) {
+      return;
+    }
+
+    swapKeys(sourceKeyId, targetKeyId);
+
+    if (state.isConnected) {
+      const sourceContent = {
+        image: sourceKey.image,
+        label: sourceKey.label,
+        action: sourceKey.action,
+      };
+      const targetContent = {
+        image: targetKey.image,
+        label: targetKey.label,
+        action: targetKey.action,
+      };
+
+      void Promise.all([
+        syncKeyToNative(copyKeyContent(sourceKey, targetContent)),
+        syncKeyToNative(copyKeyContent(targetKey, sourceContent)),
+      ]).catch((error: unknown) => {
+        console.error("Failed to sync swapped keys to device", error);
+      });
+    }
+  };
+
+  const handleKeyDragEnd = () => {
+    setDraggedKeyId(null);
+    setDropTargetKeyId(null);
+  };
+
   return (
     <>
       <input
@@ -264,10 +372,17 @@ export const StreamDeckGrid = () => {
             {state.keys.map((key: StreamDeckKey) => (
               <Paper
                 key={key.id}
-                onClick={() => selectKey(key.id)}
+                draggable
+                onClick={() => handleKeyClick(key.id)}
+                onDragStart={(event) => handleKeyDragStart(event, key.id)}
+                onDragOver={(event) => handleKeyDragOver(event, key.id)}
+                onDragLeave={() => handleKeyDragLeave(key.id)}
+                onDrop={(event) => handleKeyDrop(event, key.id)}
+                onDragEnd={handleKeyDragEnd}
+                aria-label={`Key ${key.id + 1}, drag to swap with another key`}
                 sx={{
                   aspectRatio: "1",
-                  cursor: "pointer",
+                  cursor: draggedKeyId === key.id ? "grabbing" : "grab",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
@@ -275,22 +390,31 @@ export const StreamDeckGrid = () => {
                   p: 0.75,
                   position: "relative",
                   overflow: "hidden",
-                  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                  transition:
+                    "border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease",
+                  opacity: draggedKeyId === key.id ? 0.45 : 1,
                   border:
-                    state.selectedKeyId === key.id ? "3px solid" : "2px solid",
+                    state.selectedKeyId === key.id ? "0.1875rem solid" : "0.125rem solid",
                   borderColor:
-                    state.selectedKeyId === key.id ? "#58a6ff" : "#404050",
+                    dropTargetKeyId === key.id
+                      ? "#7cc4ff"
+                      : state.selectedKeyId === key.id
+                        ? "#58a6ff"
+                        : "#404050",
+                  borderStyle: dropTargetKeyId === key.id ? "dashed" : "solid",
                   background:
                     state.selectedKeyId === key.id
                       ? "linear-gradient(135deg, #404050 0%, #2d2d44 100%)"
                       : "linear-gradient(135deg, #2d2d44 0%, #1a1a2e 100%)",
                   boxShadow:
-                    state.selectedKeyId === key.id
-                      ? "0 0 12px rgba(88, 166, 255, 0.5), inset 0 0 6px rgba(88, 166, 255, 0.1)"
-                      : "0 2px 4px rgba(0, 0, 0, 0.3)",
+                    dropTargetKeyId === key.id
+                      ? "0 0 0.875rem rgba(88, 166, 255, 0.55), inset 0 0 0.375rem rgba(88, 166, 255, 0.12)"
+                      : state.selectedKeyId === key.id
+                        ? "0 0 0.75rem rgba(88, 166, 255, 0.5), inset 0 0 0.375rem rgba(88, 166, 255, 0.1)"
+                        : "0 0.125rem 0.25rem rgba(0, 0, 0, 0.3)",
                   "&:hover": {
-                    borderColor: "#5a5a6a",
-                    boxShadow: "0 4px 14px rgba(88, 166, 255, 0.35)",
+                    borderColor: dropTargetKeyId === key.id ? "#7cc4ff" : "#5a5a6a",
+                    boxShadow: "0 0.25rem 0.875rem rgba(88, 166, 255, 0.35)",
                   },
                 }}
               >
